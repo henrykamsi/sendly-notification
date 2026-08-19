@@ -1,0 +1,3148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script>
+(function() {
+    'use strict';
+
+    const SERVER_URL = 'https://push-notification-server-5tx2.onrender.com';
+    const API_KEY = 'sendly_live_aboutis_a693cb8e95c0bf15094b13b39b360ae0';
+    const APP_NAME = 'Sendly Notification';
+
+    if (!('Notification' in window)) {
+        console.warn('Sendly: Notifications not supported');
+        return;
+    }
+
+    function createPopup() {
+        if (document.getElementById('sendly-popup-overlay')) return;
+
+        const popupHTML = `
+            <div id="sendly-popup-overlay" style="
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.75);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 999999;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            ">
+                <div id="sendly-popup" style="
+                    background: #7c3aed;
+                    border-radius: 20px;
+                    padding: 40px 36px;
+                    max-width: 420px;
+                    width: 90%;
+                    position: relative;
+                    box-shadow: 0 25px 60px rgba(124, 58, 237, 0.5);
+                    animation: sendlyFadeIn 0.4s ease-out;
+                    text-align: center;
+                ">
+                    <button id="sendly-close-btn" style="
+                        position: absolute;
+                        top: 12px;
+                        right: 16px;
+                        background: none;
+                        border: none;
+                        font-size: 24px;
+                        color: rgba(255,255,255,0.5);
+                        cursor: pointer;
+                        padding: 4px 8px;
+                        transition: color 0.2s;
+                    ">&times;</button>
+
+                    <div style="margin-bottom: 12px;">
+                        <span style="font-size: 48px;">🔔</span>
+                    </div>
+
+                    <h2 style="
+                        font-size: 22px;
+                        font-weight: 700;
+                        color: #ffffff;
+                        margin: 0 0 6px 0;
+                    ">${APP_NAME}</h2>
+
+                    <p style="
+                        font-size: 15px;
+                        color: rgba(255,255,255,0.85);
+                        margin: 0 0 24px 0;
+                        line-height: 1.6;
+                    ">
+                        Allow notifications to receive real-time updates and alerts.
+                    </p>
+
+                    <div style="display: flex; gap: 12px; justify-content: center;">
+                        <button id="sendly-allow-btn" style="
+                            background: #22c55e;
+                            color: #ffffff;
+                            border: none;
+                            border-radius: 10px;
+                            padding: 14px 28px;
+                            font-size: 16px;
+                            font-weight: 600;
+                            cursor: pointer;
+                            transition: background 0.2s, transform 0.1s;
+                            flex: 1;
+                            box-shadow: 0 4px 15px rgba(34, 197, 94, 0.3);
+                        ">✅ Allow</button>
+
+                        <button id="sendly-dismiss-btn" style="
+                            background: #ef4444;
+                            color: #ffffff;
+                            border: none;
+                            border-radius: 10px;
+                            padding: 14px 28px;
+                            font-size: 16px;
+                            font-weight: 600;
+                            cursor: pointer;
+                            transition: background 0.2s, transform 0.1s;
+                            flex: 1;
+                            box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
+                        ">✕ Dismiss</button>
+                    </div>
+
+                    <div id="sendly-status" style="
+                        margin-top: 16px;
+                        font-size: 14px;
+                        color: rgba(255,255,255,0.8);
+                        display: none;
+                    "></div>
+
+                    <p style="
+                        font-size: 11px;
+                        color: rgba(255,255,255,0.4);
+                        margin: 14px 0 0 0;
+                    ">You can change this anytime in your browser settings</p>
+                </div>
+            </div>
+
+            <style>
+                @keyframes sendlyFadeIn {
+                    from { opacity: 0; transform: scale(0.95) translateY(15px); }
+                    to { opacity: 1; transform: scale(1) translateY(0); }
+                }
+                #sendly-allow-btn:hover {
+                    background: #16a34a;
+                    transform: scale(1.02);
+                }
+                #sendly-dismiss-btn:hover {
+                    background: #dc2626;
+                    transform: scale(1.02);
+                }
+                #sendly-close-btn:hover {
+                    color: #ffffff;
+                }
+                #sendly-status.success {
+                    color: #86efac;
+                }
+                #sendly-status.error {
+                    color: #fca5a5;
+                }
+            </style>
+        `;
+
+        const div = document.createElement('div');
+        div.innerHTML = popupHTML;
+        document.body.appendChild(div.firstElementChild);
+
+        document.getElementById('sendly-allow-btn').addEventListener('click', function() {
+            setStatus('⏳ Requesting permission...', '');
+            requestBrowserPermission();
+        });
+
+        document.getElementById('sendly-dismiss-btn').addEventListener('click', function() {
+            closePopup();
+            localStorage.setItem('sendly_dismissed', 'true');
+        });
+
+        document.getElementById('sendly-close-btn').addEventListener('click', function() {
+            closePopup();
+            localStorage.setItem('sendly_dismissed', 'true');
+        });
+
+        document.getElementById('sendly-popup-overlay').addEventListener('click', function(e) {
+            if (e.target === this) {
+                // Do nothing
+            }
+        });
+    }
+
+    function setStatus(message, type) {
+        const statusEl = document.getElementById('sendly-status');
+        if (statusEl) {
+            statusEl.textContent = message;
+            statusEl.className = type || '';
+            statusEl.style.display = 'block';
+        }
+    }
+
+    function closePopup() {
+        const overlay = document.getElementById('sendly-popup-overlay');
+        if (overlay) {
+            overlay.remove();
+        }
+    }
+
+    function requestBrowserPermission() {
+        Notification.requestPermission().then(function(permission) {
+            if (permission === 'granted') {
+                setStatus('✅ Subscribed! Saving device...', 'success');
+                registerServiceWorker();
+                localStorage.removeItem('sendly_dismissed');
+                localStorage.setItem('sendly_subscribed', 'true');
+            } else if (permission === 'denied') {
+                setStatus('❌ Permission denied.', 'error');
+                setTimeout(() => { closePopup(); }, 2000);
+                localStorage.setItem('sendly_blocked', 'true');
+                localStorage.removeItem('sendly_dismissed');
+            } else {
+                setStatus('⚠️ Permission request cancelled.', '');
+            }
+        });
+    }
+
+    async function registerServiceWorker() {
+        try {
+            // ✅ AUTO-DETECT the correct path (works for any user, any subfolder)
+            const swPath = window.location.pathname.split('/').slice(0, -1).join('/') + '/sw.js';
+            const reg = await navigator.serviceWorker.register(swPath);
+            console.log('Sendly: Service worker registered at', swPath);
+
+            const keyRes = await fetch(SERVER_URL + '/api/v1/vapid-key');
+            const keyData = await keyRes.json();
+
+            function urlBase64ToUint8Array(base64String) {
+                const padding = '='.repeat((4 - base64String.length % 4) % 4);
+                const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+                const rawData = window.atob(base64);
+                const outputArray = new Uint8Array(rawData.length);
+                for (let i = 0; i < rawData.length; ++i) {
+                    outputArray[i] = rawData.charCodeAt(i);
+                }
+                return outputArray;
+            }
+
+            const subscription = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(keyData.publicKey)
+            });
+
+            const response = await fetch(SERVER_URL + '/api/v1/subscribe', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-sendly-key': API_KEY
+                },
+                body: JSON.stringify(subscription)
+            });
+
+            const data = await response.json();
+
+            if (data.status === 100) {
+                console.log('✅ Sendly: Device registered successfully');
+                setStatus('✅ Device saved! You will receive notifications.', 'success');
+                setTimeout(() => { closePopup(); }, 2000);
+            } else {
+                console.error('Sendly: Registration failed', data);
+                setStatus('❌ Registration failed: ' + (data.message || 'Unknown error'), 'error');
+            }
+
+        } catch (err) {
+            console.error('Sendly registration error:', err);
+            setStatus('❌ Error: ' + err.message, 'error');
+        }
+    }
+
+    function shouldShowPopup() {
+        if (Notification.permission === 'granted' || localStorage.getItem('sendly_subscribed') === 'true') {
+            registerServiceWorker();
+            return false;
+        }
+
+        if (Notification.permission === 'denied' || localStorage.getItem('sendly_blocked') === 'true') {
+            return false;
+        }
+
+        if (localStorage.getItem('sendly_dismissed') === 'true') {
+            return false;
+        }
+
+        return true;
+    }
+
+    function initSendly() {
+        if (shouldShowPopup()) {
+            createPopup();
+        }
+    }
+
+    if (document.readyState === 'complete') {
+        initSendly();
+    } else {
+        window.addEventListener('load', initSendly);
+    }
+
+    console.log('Sendly: SDK loaded');
+
+})();
+</script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Google Site Verification -->
+    <meta name="google-site-verification" content="ZxvYybyg9963-ltKszRxcviAPkYag5UuGqjlJLMqtww" />
+
+    <title>Sendly Notification</title>
+    <meta name="title" content="Sendly Notification">
+    <meta name="description" content="Sendly Notification | A Way To Update">
+
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://sendly-notification.onrender.com">
+    <meta property="og:title" content="Sendly Notification">
+    <meta property="og:description" content="Sendly Notification | A Way To Update">
+    <meta property="og:image" content="https://i.ibb.co/CLqyBTb/1786407016727.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://sendly-notification.onrender.com">
+    <meta property="twitter:title" content="Sendly Notification">
+    <meta property="twitter:description" content="Sendly Notification | A Way To Update">
+    <meta property="twitter:image" content="https://i.ibb.co/CLqyBTb/1786407016727.png">
+
+    <link rel="icon" type="image/png" href="https://i.ibb.co/CLqyBTb/1786407016727.png">
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0b0b0e;
+            color: #e8e8ec;
+            min-height: 100vh;
+            transition: background 0.3s, color 0.3s;
+            -webkit-font-smoothing: antialiased;
+            display: flex;
+            flex-direction: column;
+        }
+        body.light-mode { background: #f2f2f6; color: #1c1c1e; }
+        button { cursor: pointer; border: none; outline: none; font-family: inherit; background: none; }
+        input, textarea, select { font-family: inherit; outline: none; border: none; background: none; color: inherit; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #00f2fe; border-radius: 10px; }
+
+        #sendly-loader {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(11, 11, 14, 0.94); backdrop-filter: blur(16px);
+            z-index: 9999999; display: none; flex-direction: column;
+            justify-content: center; align-items: center; gap: 24px;
+        }
+        #sendly-loader.show { display: flex; }
+        .loader-wrapper { width: 120px; height: 120px; display: flex; justify-content: center; align-items: center; }
+        .access-svg { width: 100%; height: 100%; }
+        .layer-center {
+            transform-origin: 100px 100px;
+            animation: centerAnim 2s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+        }
+        .layer-middle {
+            transform-origin: 100px 100px;
+            animation: middleAnim 2s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+        }
+        .layer-outer {
+            transform-origin: 100px 100px;
+            animation: outerAnim 2s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+        }
+        @keyframes centerAnim {
+            0% { transform: scale(0.5); opacity: 0.4; }
+            25%, 75% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(0.5); opacity: 0.4; }
+        }
+        @keyframes middleAnim {
+            0%, 15% { transform: scale(0.2); opacity: 0; }
+            35%, 70% { transform: scale(1); opacity: 1; }
+            90%, 100% { transform: scale(0.2); opacity: 0; }
+        }
+        @keyframes outerAnim {
+            0%, 30% { transform: scale(0.2); opacity: 0; }
+            50%, 65% { transform: scale(1); opacity: 1; }
+            85%, 100% { transform: scale(0.2); opacity: 0; }
+        }
+        #sendly-loader .loader-text { font-size: 16px; font-weight: 500; color: #a0a0aa; letter-spacing: 0.5px; }
+        #sendly-loader .loader-text span { color: #00f2fe; }
+
+        #authScreen { max-width: 400px; margin: 60px auto; padding: 24px; flex: 1; }
+        .auth-logo { text-align: center; margin-bottom: 32px; }
+        .auth-logo h1 { font-size: 34px; font-weight: 800; color: #00f2fe; letter-spacing: -0.5px; }
+        .auth-logo p { color: #6a6a76; font-size: 14px; margin-top: 4px; }
+        .auth-card {
+            background: #151518; border: 1px solid #2a2a30; border-radius: 16px; padding: 28px 24px;
+        }
+        body.light-mode .auth-card { background: #ffffff; border-color: #d9d9e0; }
+        .auth-card h2 { font-size: 20px; font-weight: 600; margin-bottom: 20px; color: #e8e8ec; }
+        body.light-mode .auth-card h2 { color: #1c1c1e; }
+        .auth-card .form-group { margin-bottom: 16px; }
+        .auth-card .form-group label { display: block; font-size: 13px; font-weight: 500; color: #8a8a96; margin-bottom: 4px; }
+        body.light-mode .auth-card .form-group label { color: #5a5a66; }
+        .auth-card .form-group input, .auth-card .form-group select {
+            width: 100%; padding: 12px 14px; background: #0f0f12; border: 1px solid #2a2a30;
+            border-radius: 10px; font-size: 14px; color: #e8e8ec; transition: border 0.2s;
+        }
+        body.light-mode .auth-card .form-group input, body.light-mode .auth-card .form-group select {
+            background: #f2f2f6; border-color: #d9d9e0; color: #1c1c1e;
+        }
+        .auth-card .form-group input:focus, .auth-card .form-group select:focus {
+            border-color: #00f2fe; box-shadow: 0 0 0 3px rgba(0, 242, 254, 0.08);
+        }
+        .auth-card .btn-primary {
+            width: 100%; padding: 14px; background: linear-gradient(135deg, #00f2fe, #4facfe);
+            border-radius: 10px; font-weight: 600; font-size: 15px; color: #000;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .auth-card .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 28px rgba(0, 242, 254, 0.25); }
+        .auth-card .auth-toggle { text-align: center; margin-top: 16px; font-size: 14px; color: #6a6a76; }
+        .auth-card .auth-toggle a { color: #00f2fe; font-weight: 600; cursor: pointer; }
+        .auth-card .auth-toggle a:hover { text-decoration: underline; }
+
+        .app-container { max-width: 720px; margin: 0 auto; padding: 20px 16px 100px; display: none; flex: 1; }
+        .app-container.active { display: block; }
+
+        .app-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 0 16px; border-bottom: 1px solid #22222a; margin-bottom: 24px;
+        }
+        body.light-mode .app-header { border-bottom-color: #d9d9e0; }
+        .app-header .logo { font-size: 22px; font-weight: 800; color: #00f2fe; }
+        .app-header .logo span { font-weight: 400; color: #6a6a76; font-size: 13px; }
+        .app-header .header-actions { display: flex; align-items: center; gap: 12px; }
+        .app-header .user-badge {
+            font-size: 13px; color: #8a8a96; background: #151518; padding: 6px 14px;
+            border-radius: 20px; border: 1px solid #2a2a30;
+        }
+        body.light-mode .app-header .user-badge { background: #ffffff; border-color: #d9d9e0; color: #5a5a66; }
+        .app-header .icon-btn { font-size: 20px; padding: 6px 8px; border-radius: 8px; color: #6a6a76; transition: 0.2s; }
+        .app-header .icon-btn:hover { background: #1a1a20; color: #e8e8ec; }
+        body.light-mode .app-header .icon-btn:hover { background: #e5e5ea; color: #1c1c1e; }
+
+        .bottom-nav {
+            position: fixed; bottom: 0; left: 0; width: 100%; background: #111114;
+            border-top: 1px solid #22222a; display: flex; justify-content: space-around;
+            padding: 6px 0 env(safe-area-inset-bottom, 8px) 0; z-index: 100; backdrop-filter: blur(20px);
+        }
+        body.light-mode .bottom-nav { background: #f2f2f6; border-top-color: #d9d9e0; }
+        .bottom-nav .nav-item {
+            display: flex; flex-direction: column; align-items: center; gap: 1px;
+            font-size: 10px; font-weight: 500; color: #5a5a66; padding: 6px 16px;
+            border-radius: 12px; transition: 0.2s; background: transparent; border: none; position: relative;
+        }
+        .bottom-nav .nav-item .icon { font-size: 22px; }
+        .bottom-nav .nav-item.active { color: #00f2fe; }
+        .bottom-nav .nav-item.active::after {
+            content: ''; position: absolute; top: -1px; left: 30%; width: 40%; height: 2.5px;
+            background: #00f2fe; border-radius: 4px;
+        }
+        .bottom-nav .nav-item:hover:not(.active) { color: #a0a0aa; }
+
+        .card {
+            background: #141418; border: 1px solid #22222a; border-radius: 16px;
+            padding: 20px 24px; margin-bottom: 18px;
+        }
+        body.light-mode .card { background: #ffffff; border-color: #d9d9e0; }
+        .card h3 {
+            font-size: 16px; font-weight: 600; color: #e8e8ec; margin-bottom: 14px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        body.light-mode .card h3 { color: #1c1c1e; }
+        .card h3 .badge { font-size: 10px; font-weight: 500; background: #00f2fe18; color: #00f2fe; padding: 2px 10px; border-radius: 20px; }
+        .card p { font-size: 14px; line-height: 1.6; color: #8a8a96; }
+        body.light-mode .card p { color: #5a5a66; }
+
+        .form-group { margin-bottom: 14px; }
+        .form-group label { display: block; font-size: 13px; font-weight: 500; color: #8a8a96; margin-bottom: 4px; }
+        body.light-mode .form-group label { color: #5a5a66; }
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%; padding: 12px 14px; background: #0f0f12; border: 1px solid #2a2a30;
+            border-radius: 10px; font-size: 14px; color: #e8e8ec; transition: border 0.2s;
+        }
+        body.light-mode .form-group input, body.light-mode .form-group textarea, body.light-mode .form-group select {
+            background: #f2f2f6; border-color: #d9d9e0; color: #1c1c1e;
+        }
+        .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
+            border-color: #00f2fe; box-shadow: 0 0 0 3px rgba(0, 242, 254, 0.06);
+        }
+        .form-group textarea { min-height: 84px; resize: vertical; }
+
+        .btn {
+            padding: 12px 24px; border-radius: 10px; font-weight: 600; font-size: 14px;
+            transition: 0.15s; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: none;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #00f2fe, #4facfe); color: #000;
+        }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 28px rgba(0, 242, 254, 0.2); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn-secondary { background: #22222a; color: #e8e8ec; }
+        .btn-secondary:hover { background: #2e2e38; }
+        body.light-mode .btn-secondary { background: #e5e5ea; color: #1c1c1e; }
+        body.light-mode .btn-secondary:hover { background: #d5d5da; }
+        .btn-danger { background: #ff3b30; color: #fff; }
+        .btn-danger:hover { background: #e0352b; }
+        .btn-success { background: #34c759; color: #fff; }
+        .btn-success:hover { background: #2db84e; }
+        .btn-block { width: 100%; }
+        .btn-sm { padding: 8px 16px; font-size: 12px; }
+        .btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
+
+        .btn-download-green {
+            background: #22c55e;
+            color: #ffffff;
+            padding: 14px 32px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+            width: 100%;
+            justify-content: center;
+        }
+        .btn-download-green:hover {
+            background: #16a34a;
+            transform: scale(1.02);
+        }
+
+        .stats-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px;
+        }
+        .stat-box {
+            background: #0f0f12; border: 1px solid #22222a; border-radius: 12px; padding: 14px 10px; text-align: center;
+        }
+        body.light-mode .stat-box { background: #f7f7fa; border-color: #d9d9e0; }
+        .stat-box .number { font-size: 24px; font-weight: 700; color: #00f2fe; }
+        .stat-box .label { font-size: 11px; color: #6a6a76; margin-top: 2px; }
+
+        .app-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 14px 16px; background: #0f0f12; border: 1px solid #22222a; border-radius: 12px;
+            margin-bottom: 10px; transition: 0.2s; position: relative;
+        }
+        body.light-mode .app-item { background: #f7f7fa; border-color: #d9d9e0; }
+        .app-item:hover { border-color: #00f2fe; }
+        .app-item .info { flex: 1; cursor: pointer; }
+        .app-item .info .name { font-weight: 600; font-size: 15px; }
+        .app-item .info .meta { font-size: 12px; color: #6a6a76; }
+
+        .app-actions { position: relative; display: flex; align-items: center; }
+        .app-menu-btn {
+            background: transparent; border: none; color: #6a6a76; font-size: 22px; font-weight: 700;
+            padding: 4px 10px; cursor: pointer; border-radius: 8px; transition: 0.2s; line-height: 1;
+        }
+        .app-menu-btn:hover { background: #1a1a20; color: #e8e8ec; }
+        body.light-mode .app-menu-btn:hover { background: #e5e5ea; color: #1c1c1e; }
+
+        .app-menu-dropdown {
+            position: absolute; top: 100%; right: 0; background: #1a1a20; border: 1px solid #2a2a30;
+            border-radius: 12px; min-width: 180px; box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+            z-index: 1000; padding: 6px 0; margin-top: 4px; display: none;
+        }
+        body.light-mode .app-menu-dropdown { background: #ffffff; border-color: #d9d9e0; }
+        .app-menu-dropdown button {
+            display: block; width: 100%; padding: 10px 16px; background: transparent; border: none;
+            color: #e8e8ec; font-size: 14px; text-align: left; cursor: pointer; transition: 0.15s;
+        }
+        body.light-mode .app-menu-dropdown button { color: #1c1c1e; }
+        .app-menu-dropdown button:hover { background: #00f2fe18; color: #00f2fe; }
+        .app-menu-dropdown button:last-child:hover { color: #ff453a; }
+
+        .notif-item {
+            background: #0f0f12; border: 1px solid #22222a; border-radius: 12px; padding: 14px 16px; margin-bottom: 10px;
+            position: relative;
+        }
+        body.light-mode .notif-item { background: #f7f7fa; border-color: #d9d9e0; }
+        .notif-item.scheduled {
+            border-color: #ff453a;
+            border-left: 4px solid #ff453a;
+        }
+        .notif-item .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .notif-item .header .title { font-weight: 600; font-size: 14px; }
+        .notif-item .header .time { font-size: 12px; color: #6a6a76; }
+        .notif-item .stats { display: flex; gap: 14px; font-size: 12px; color: #6a6a76; flex-wrap: wrap; }
+        .notif-item .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+        .notif-item .countdown { font-size: 13px; color: #ff453a; font-weight: 600; }
+        .notif-item .scheduled-badge {
+            position: absolute; top: -6px; right: -6px;
+            background: #ff453a; color: #fff; font-size: 10px;
+            padding: 2px 10px; border-radius: 12px; font-weight: 600;
+        }
+
+        .empty-state { text-align: center; padding: 40px 16px; }
+        .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+        .empty-state h3 { color: #6a6a76; font-size: 16px; }
+        .empty-state p { color: #4a4a56; font-size: 14px; max-width: 280px; margin: 4px auto 0; }
+
+        .glowing-box {
+            background: #0f0f12; border: 1px solid #00f2fe; border-radius: 12px;
+            box-shadow: 0 0 15px rgba(0, 242, 254, 0.3), inset 0 0 10px rgba(0, 242, 254, 0.1);
+            padding: 16px; position: relative; margin-top: 16px;
+            animation: glowPulse 2s infinite alternate;
+        }
+        body.light-mode .glowing-box { background: #ffffff; }
+        @keyframes glowPulse {
+            0% { box-shadow: 0 0 15px rgba(0, 242, 254, 0.3), inset 0 0 8px rgba(0, 242, 254, 0.1); }
+            100% { box-shadow: 0 0 25px rgba(0, 242, 254, 0.6), inset 0 0 15px rgba(0, 242, 254, 0.2); }
+        }
+        .glowing-box .copy-btn {
+            position: absolute; top: 12px; right: 12px;
+            background: linear-gradient(135deg, #00f2fe, #4facfe); color: #000;
+            border: none; padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 700;
+            cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; z-index: 10;
+        }
+        .glowing-box .copy-btn:hover { transform: scale(1.05); box-shadow: 0 4px 12px rgba(0, 242, 254, 0.4); }
+        .glowing-box .code-block {
+            background: transparent; border: none; padding: 32px 0 0 0; margin: 0;
+            max-height: 300px; overflow-y: auto; color: #00f2fe;
+            font-family: 'SF Mono', 'Courier New', monospace; font-size: 13px;
+            word-break: break-all; user-select: all;
+        }
+
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(11, 11, 14, 0.92); backdrop-filter: blur(20px);
+            z-index: 999999; display: none; justify-content: center; align-items: center; padding: 24px;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-box {
+            background: #151518; border: 1px solid #2a2a30; border-radius: 20px;
+            max-width: 480px; width: 100%; padding: 32px 28px; text-align: center; animation: modalIn 0.3s ease;
+            max-height: 80vh; overflow-y: auto;
+        }
+        body.light-mode .modal-box { background: #ffffff; border-color: #d9d9e0; }
+        @keyframes modalIn {
+            from { opacity: 0; transform: scale(0.96) translateY(16px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .modal-box .icon { font-size: 44px; margin-bottom: 8px; }
+        .modal-box h2 { font-size: 22px; font-weight: 700; color: #e8e8ec; margin-bottom: 4px; }
+        body.light-mode .modal-box h2 { color: #1c1c1e; }
+        .modal-box p { color: #6a6a76; font-size: 14px; line-height: 1.6; margin-bottom: 16px; }
+        .modal-box .code-block {
+            background: #0f0f12; border: 1px solid #2a2a30; border-radius: 10px; padding: 14px;
+            font-family: 'SF Mono', 'Courier New', monospace; font-size: 13px; color: #00f2fe;
+            word-break: break-all; user-select: all; margin-bottom: 16px;
+        }
+
+        .subscriber-item {
+            background: #0f0f12; border: 1px solid #22222a; border-radius: 10px;
+            padding: 12px 14px; margin-bottom: 8px; font-size: 13px;
+        }
+        body.light-mode .subscriber-item { background: #f7f7fa; border-color: #d9d9e0; }
+        .subscriber-item .token { color: #00f2fe; font-family: monospace; font-size: 12px; word-break: break-all; }
+        .subscriber-item .device { color: #8a8a96; font-size: 12px; }
+
+        .settings-item {
+            display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #22222a;
+        }
+        body.light-mode .settings-item { border-bottom-color: #d9d9e0; }
+        .settings-item .left .title { font-size: 14px; font-weight: 500; }
+        .settings-item .left .desc { font-size: 12px; color: #6a6a76; }
+
+        .toggle-group {
+            display: inline-flex; background: #0f0f12; border: 1px solid #2a2a30; border-radius: 10px; overflow: hidden;
+        }
+        body.light-mode .toggle-group { background: #f2f2f6; border-color: #d9d9e0; }
+        .toggle-group button {
+            padding: 8px 18px; font-weight: 500; font-size: 13px; color: #6a6a76;
+            transition: 0.2s; border: none; background: transparent;
+        }
+        .toggle-group button.active { background: #00f2fe; color: #000; }
+
+        .upload-area {
+            border: 2px dashed #2a2a30; border-radius: 10px; padding: 16px;
+            text-align: center; cursor: pointer; transition: 0.2s; margin-bottom: 8px;
+        }
+        .upload-area:hover { border-color: #00f2fe; background: #00f2fe08; }
+        .upload-area .icon { font-size: 28px; display: block; margin-bottom: 4px; }
+        .upload-area .text { font-size: 13px; color: #6a6a76; }
+        .upload-preview { max-width: 100%; max-height: 150px; border-radius: 8px; margin-top: 8px; display: none; object-fit: cover; }
+        .upload-preview.show { display: block; }
+
+        .result-icon { font-size: 64px; display: block; margin-bottom: 12px; }
+        .result-success .result-icon { color: #34c759; }
+        .result-error .result-icon { color: #ff453a; }
+
+        .app-footer {
+            text-align: center;
+            padding: 20px 16px 100px;
+            font-size: 12px;
+            color: #4a4a56;
+            border-top: 1px solid #22222a;
+            margin-top: 20px;
+        }
+        body.light-mode .app-footer { border-top-color: #d9d9e0; color: #8a8a96; }
+
+        .config-step {
+            display: none;
+            animation: sendlyFadeIn 0.4s ease-out;
+        }
+        .config-step.active {
+            display: block;
+        }
+        @keyframes sendlyFadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .progress-bar-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            position: relative;
+        }
+        .progress-bar-container::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 10%;
+            right: 10%;
+            height: 2px;
+            background: #2a2a30;
+            z-index: 0;
+        }
+        .progress-step {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: #2a2a30;
+            color: #6a6a76;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 13px;
+            position: relative;
+            z-index: 1;
+            transition: 0.3s;
+        }
+        .progress-step.active {
+            background: #00f2fe;
+            color: #000;
+        }
+        .progress-step.done {
+            background: #34c759;
+            color: #fff;
+        }
+
+        .schedule-toggle {
+            display: flex; gap: 10px; margin-bottom: 14px;
+        }
+        .schedule-toggle button {
+            padding: 10px 18px; border-radius: 10px; font-weight: 600; font-size: 13px;
+            border: 1px solid #2a2a30; background: transparent; color: #6a6a76;
+            transition: 0.2s; flex: 1;
+        }
+        .schedule-toggle button.active {
+            background: #00f2fe; color: #000; border-color: #00f2fe;
+        }
+
+        .refresh-btn {
+            background: transparent;
+            border: 1px solid #2a2a30;
+            color: #8a8a96;
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .refresh-btn:hover {
+            border-color: #00f2fe;
+            color: #00f2fe;
+        }
+
+        @media (max-width: 480px) {
+            .app-container { padding: 16px 12px 100px; }
+            .stats-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+            .stat-box .number { font-size: 20px; }
+            .modal-box { padding: 24px 18px; }
+            .bottom-nav .nav-item { padding: 4px 8px; font-size: 9px; }
+            .bottom-nav .nav-item .icon { font-size: 18px; }
+            .card { padding: 16px; }
+            .schedule-toggle button { font-size: 12px; padding: 8px 12px; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="sendly-loader">
+    <div class="loader-wrapper">
+        <svg class="access-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+            <path class="layer-center" fill="#00f2fe" d="M100,86 L114,100 L100,114 L86,100 Z" />
+            <g class="layer-middle" fill="#00f2fe">
+                <path d="M100,68 L132,100 L120,100 L100,80 L80,100 L68,100 Z" />
+                <path d="M100,132 L132,100 L120,100 L100,120 L80,100 L68,100 Z" />
+            </g>
+            <g class="layer-outer" fill="#00f2fe">
+                <path d="M100,50 L150,100 L136,100 L100,64 L64,100 L50,100 Z" />
+                <path d="M100,150 L150,100 L136,100 L100,136 L64,100 L50,100 Z" />
+            </g>
+        </svg>
+    </div>
+    <div class="loader-text"><span id="loaderAction">Loading</span>…</div>
+</div>
+
+<div id="authScreen">
+    <div class="auth-logo">
+        <h1>Sendly</h1>
+        <p>by Henry Global Tech Industry</p>
+    </div>
+
+    <div id="loginForm" class="auth-card">
+        <h2>Welcome back</h2>
+        <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="loginEmail" placeholder="you@example.com" />
+        </div>
+        <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="loginPassword" placeholder="Enter your password" />
+        </div>
+        <button class="btn-primary" id="loginBtn">Sign In</button>
+        <div class="auth-toggle">
+            Don't have an account? <a id="showRegister">Create one</a>
+        </div>
+    </div>
+
+    <div id="registerForm" class="auth-card" style="display:none;">
+        <h2>Create account</h2>
+        <div class="form-group">
+            <label>Full Name</label>
+            <input type="text" id="regName" placeholder="John Doe" />
+        </div>
+        <div class="form-group">
+            <label>Surname</label>
+            <input type="text" id="regSurname" placeholder="Doe" />
+        </div>
+        <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="regEmail" placeholder="you@example.com" />
+        </div>
+        <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="regPassword" placeholder="Create a password" />
+        </div>
+        <div class="form-group">
+            <label>Confirm Password</label>
+            <input type="password" id="regConfirmPassword" placeholder="Confirm your password" />
+        </div>
+        <div class="form-group">
+            <label>Audience Size</label>
+            <select id="regTraffic">
+                <option value="10-50">10 – 50</option>
+                <option value="50-100">50 – 100</option>
+                <option value="100-500" selected>100 – 500</option>
+                <option value="500-1000">500 – 1,000</option>
+                <option value="1000-5000">1,000 – 5,000</option>
+                <option value="5000-10000">5,000 – 10,000</option>
+                <option value="10000+">10,000+</option>
+            </select>
+        </div>
+        <button class="btn-primary" id="registerBtn">Create Account</button>
+        <div class="auth-toggle">
+            Already have an account? <a id="showLogin">Sign in</a>
+        </div>
+    </div>
+</div>
+
+<div class="app-container" id="appContainer">
+
+    <header class="app-header">
+        <div class="logo">Sendly <span>v2.0</span></div>
+        <div class="header-actions">
+            <span class="user-badge" id="userBadge">👤 User</span>
+            <button class="icon-btn" id="themeToggle" title="Toggle theme">🌓</button>
+            <button class="icon-btn" id="logoutBtn" title="Log out">🚪</button>
+        </div>
+    </header>
+
+    <!-- ============================================================
+    HOME / APPS TAB
+    ============================================================ -->
+    <div class="tab-content" id="tabCreateApp">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
+            <h2 style="color:#00f2fe; font-size:22px; font-weight:700;">📱 My Apps</h2>
+            <div style="display:flex; gap:8px; align-items:center;">
+                <button class="refresh-btn" id="refreshAppsBtn" title="Refresh apps">
+                    🔄 <span id="refreshTimer">30s</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="card" id="createAppCard">
+            <h3>➕ Create New App</h3>
+
+            <!-- Step 1: App Details -->
+            <div id="step1" class="config-step active">
+                <div class="form-group">
+                    <label>App Name <span style="color:#6a6a76;">(Any name works)</span></label>
+                    <input type="text" id="appNameInput" placeholder="e.g. My Website" />
+                </div>
+                <div class="form-group">
+                    <label>App URL <span style="color:#6a6a76;">(Any URL works)</span></label>
+                    <input type="url" id="appUrlInput" placeholder="https://example.com" />
+                    <div style="font-size:12px; color:#6a6a76; margin-top:4px;">✅ Any app name and any URL accepted</div>
+                </div>
+                <button class="btn btn-primary btn-block" id="createAppBtn">🚀 Create App &rarr;</button>
+            </div>
+
+            <!-- Step 2: API Key -->
+            <div id="step2" class="config-step">
+                <div style="text-align:center; margin-bottom:16px;">
+                    <span style="font-size:48px;">🔑</span>
+                    <h3 style="color:#e8e8ec; margin-top:8px;">Your API Key</h3>
+                    <p style="color:#6a6a76; font-size:13px;">Copy and store it safely. Do not share it.</p>
+                </div>
+                <div class="glowing-box" style="margin-top:0;">
+                    <button class="copy-btn" id="copyApiKeyStepBtn">📋 Copy</button>
+                    <div class="code-block" id="apiKeyStepDisplay">sendly_live_xxxxxxxxxxxxxxxx</div>
+                </div>
+                <div style="display:flex; gap:10px; margin-top:16px;">
+                    <button class="btn btn-secondary" id="step2BackBtn" style="flex:1;">← Back</button>
+                    <button class="btn btn-primary" id="step2NextBtn" style="flex:2;">Next →</button>
+                </div>
+            </div>
+
+            <!-- Step 3: Config Code -->
+            <div id="step3" class="config-step">
+                <div style="text-align:center; margin-bottom:16px;">
+                    <span style="font-size:48px;">📋</span>
+                    <h3 style="color:#e8e8ec; margin-top:8px;">Your Config Code</h3>
+                    <p style="color:#6a6a76; font-size:13px;">Add this to your website's <code style="background:#0f0f12; padding:2px 8px; border-radius:4px;">&lt;head&gt;</code> section.</p>
+                </div>
+                <div class="glowing-box" style="margin-top:0;">
+                    <button class="copy-btn" id="copyConfigStepBtn">📋 Copy</button>
+                    <div class="code-block" id="configStepDisplay"></div>
+                </div>
+                <div style="display:flex; gap:10px; margin-top:16px;">
+                    <button class="btn btn-secondary" id="step3BackBtn" style="flex:1;">← Back</button>
+                    <button class="btn btn-primary" id="step3NextBtn" style="flex:2;">Next →</button>
+                </div>
+            </div>
+
+            <!-- Step 4: Download Service Worker -->
+            <div id="step4" class="config-step">
+                <div style="text-align:center; margin-bottom:16px;">
+                    <span style="font-size:48px;">📥</span>
+                    <h3 style="color:#e8e8ec; margin-top:8px;">Download Service Worker</h3>
+                    <p style="color:#6a6a76; font-size:13px;">Download <code style="background:#0f0f12; padding:2px 8px; border-radius:4px;">sw.js</code> and place it in your website root directory (next to <code style="background:#0f0f12; padding:2px 8px; border-radius:4px;">index.html</code>).</p>
+                </div>
+                <button class="btn-download-green" id="downloadSwBtn">
+                    ⬇️ Download sw.js
+                </button>
+                <div style="margin-top:12px; padding:12px; background:#0f0f12; border-radius:8px; border:1px solid #22222a;">
+                    <p style="font-size:13px; color:#6a6a76; margin-bottom:4px;">📌 Instructions:</p>
+                    <ol style="font-size:13px; color:#8a8a96; padding-left:20px; line-height:1.8;">
+                        <li>Click the green button above to download <code>sw.js</code></li>
+                        <li>Upload it to your website's <strong>root folder</strong> (where <code>index.html</code> is)</li>
+                        <li>Your website is now ready for push notifications!</li>
+                    </ol>
+                </div>
+                <div style="display:flex; gap:10px; margin-top:16px;">
+                    <button class="btn btn-secondary" id="step4BackBtn" style="flex:1;">← Back</button>
+                    <button class="btn btn-success" id="step4DoneBtn" style="flex:2;">✅ Done</button>
+                </div>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="progress-bar-container" style="margin-top:16px;">
+                <div class="progress-step active" id="prog1">1</div>
+                <div class="progress-step" id="prog2">2</div>
+                <div class="progress-step" id="prog3">3</div>
+                <div class="progress-step" id="prog4">4</div>
+            </div>
+        </div>
+
+        <div id="appsList">
+            <div class="empty-state" id="emptyApps">
+                <div class="icon">📱</div>
+                <h3>No apps yet</h3>
+                <p>Create your first app above.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================
+    PUSH TAB
+    ============================================================ -->
+    <div class="tab-content" id="tabPush" style="display:none;">
+        <h2 style="color:#00f2fe; font-size:22px; font-weight:700; margin-bottom:18px;">🔔 Push</h2>
+
+        <div style="display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap;">
+            <button class="btn btn-secondary" id="showScheduledBtn" style="flex:1;">
+                📋 Scheduled &amp; Draft <span id="scheduledCount" style="background:#ff453a; color:#fff; padding:0 8px; border-radius:10px; font-size:11px; margin-left:4px;">0</span>
+            </button>
+            <button class="btn btn-primary" id="showSendFormBtn" style="flex:1;">✏️ New Push</button>
+        </div>
+
+        <!-- Send Form -->
+        <div id="sendFormContainer" class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <span style="font-size:13px; color:#6a6a76;">📋 Plan: <strong id="currentPlanBadge" style="color:#00f2fe;">Free</strong></span>
+                <span style="font-size:12px; color:#6a6a76;" id="quotaDisplay">📊 1000 remaining</span>
+            </div>
+
+            <div class="form-group">
+                <label>App</label>
+                <select id="pushAppSelect"><option value="">— Select an app —</option></select>
+            </div>
+
+            <div class="form-group">
+                <label>Title <span style="color:#ff453a;">*</span></label>
+                <input type="text" id="pushTitle" placeholder="Notification title" />
+            </div>
+
+            <div class="form-group">
+                <label>Message <span style="color:#ff453a;">*</span></label>
+                <textarea id="pushMessage" placeholder="Your notification message…"></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>🖼️ Image URL (optional)</label>
+                <input type="url" id="pushImage" placeholder="https://example.com/image.jpg" />
+                <div class="upload-area" id="imageUploadArea">
+                    <span class="icon">📤</span>
+                    <span class="text">Click to upload image</span>
+                    <input type="file" id="imageFileInput" accept="image/*" style="display:none;" />
+                </div>
+                <img id="imagePreview" class="upload-preview" />
+            </div>
+
+            <div class="form-group">
+                <label>🔔 Icon URL (optional)</label>
+                <input type="url" id="pushIcon" placeholder="https://example.com/icon.png" />
+                <div class="upload-area" id="iconUploadArea">
+                    <span class="icon">📤</span>
+                    <span class="text">Click to upload icon</span>
+                    <input type="file" id="iconFileInput" accept="image/*" style="display:none;" />
+                </div>
+                <img id="iconPreview" class="upload-preview" />
+            </div>
+
+            <div class="form-group">
+                <label>🔘 Button (optional)</label>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <input type="text" id="btn1Name" placeholder="Button name" style="flex:1; min-width:100px;" />
+                    <input type="url" id="btn1Url" placeholder="Button URL" style="flex:1; min-width:100px;" />
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>🔘 Second Button (optional)</label>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <input type="text" id="btn2Name" placeholder="Button 2 name" style="flex:1; min-width:100px;" />
+                    <input type="url" id="btn2Url" placeholder="Button 2 URL" style="flex:1; min-width:100px;" />
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>👥 Subscriber Group</label>
+                <select id="pushGroup"><option value="all">All Subscribers</option></select>
+            </div>
+
+            <div class="schedule-toggle">
+                <button class="active" id="sendNowBtn">🚀 Push Now</button>
+                <button id="scheduleBtn">📅 Schedule</button>
+            </div>
+
+            <div class="form-group" id="schedulePicker" style="display:none;">
+                <label>Schedule Date &amp; Time</label>
+                <input type="datetime-local" id="pushSchedule" />
+            </div>
+
+            <button class="btn btn-primary btn-block" id="sendPushBtn">📤 Send Notification</button>
+        </div>
+
+        <!-- Scheduled List -->
+        <div id="scheduledListContainer" style="display:none;">
+            <h3 style="color:#6a6a76; font-size:14px; font-weight:500; margin:16px 0 10px;">⏳ Scheduled Notifications</h3>
+            <div id="scheduledList"></div>
+            <h3 style="color:#6a6a76; font-size:14px; font-weight:500; margin:16px 0 10px;">📋 Notification History</h3>
+        </div>
+
+        <div id="pushHistoryContainer">
+            <h3 style="color:#6a6a76; font-size:14px; font-weight:500; margin:16px 0 10px;">📋 Notification History</h3>
+            <div id="pushHistory"></div>
+        </div>
+    </div>
+
+    <!-- ============================================================
+    STATS / ANALYTICS TAB
+    ============================================================ -->
+    <div class="tab-content" id="tabStats" style="display:none;">
+        <h2 style="color:#00f2fe; font-size:22px; font-weight:700; margin-bottom:18px;">📊 Analytics</h2>
+
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
+            <button class="btn btn-secondary btn-sm" data-range="today">Today</button>
+            <button class="btn btn-secondary btn-sm" data-range="yesterday">Yesterday</button>
+            <button class="btn btn-secondary btn-sm" data-range="7days">7 Days</button>
+            <button class="btn btn-secondary btn-sm" data-range="30days">30 Days</button>
+            <button class="btn btn-secondary btn-sm" data-range="60days">60 Days</button>
+            <button class="btn btn-secondary btn-sm" data-range="1year">1 Year</button>
+            <button class="btn btn-primary btn-sm" id="refreshAnalyticsBtn">🔄 Refresh</button>
+        </div>
+
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-box"><div class="number" id="statSubscribers">0</div><div class="label">👥 Subscribers</div></div>
+            <div class="stat-box"><div class="number" id="statSent">0</div><div class="label">📤 Sent</div></div>
+            <div class="stat-box"><div class="number" id="statDelivered">0</div><div class="label">✅ Delivered</div></div>
+            <div class="stat-box"><div class="number" id="statOpenRate">0%</div><div class="label">📈 Open Rate</div></div>
+            <div class="stat-box"><div class="number" id="statClickRate">0%</div><div class="label">👆 Click Rate</div></div>
+            <div class="stat-box"><div class="number" id="statSuccessRate">0%</div><div class="label">📊 Success Rate</div></div>
+        </div>
+
+        <div class="card">
+            <h3>📱 Subscriber Tokens</h3>
+            <div id="subscriberTokens"><p style="color:#6a6a76; font-size:14px;">Select an app to view subscribers.</p></div>
+        </div>
+
+        <div class="card">
+            <h3>📊 Notification List</h3>
+            <div id="analyticsNotificationList"><p style="color:#6a6a76; font-size:14px;">Select an app to view notifications.</p></div>
+        </div>
+    </div>
+
+    <!-- ============================================================
+    SETTINGS TAB
+    ============================================================ -->
+    <div class="tab-content" id="tabSettings" style="display:none;">
+        <h2 style="color:#00f2fe; font-size:22px; font-weight:700; margin-bottom:18px;">⚙️ Settings</h2>
+
+        <div class="card">
+            <h3>🌓 Appearance</h3>
+            <div class="toggle-group">
+                <button id="lightModeBtn" class="active">☀️ Light</button>
+                <button id="darkModeBtn">🌙 Dark</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>👤 Profile</h3>
+            <div class="settings-item">
+                <div class="left"><span class="title">Name</span><span class="desc" id="profileName">Loading...</span></div>
+            </div>
+            <div class="settings-item">
+                <div class="left"><span class="title">Email</span><span class="desc" id="profileEmail">Loading...</span></div>
+            </div>
+            <div class="settings-item">
+                <div class="left"><span class="title">Plan</span><span class="desc" id="profilePlan">Free</span></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>📊 Upgrade Plan</h3>
+            <div id="plansDisplay">
+                <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #22222a;">
+                    <span><strong>Free</strong> – ₦0</span>
+                    <span style="color:#00f2fe;">Current Plan</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #22222a;">
+                    <span><strong>Pro</strong> – ₦4,500</span>
+                    <button class="btn btn-primary btn-sm" onclick="window.open('https://wa.me/23409118310148?text=I%20want%20to%20upgrade%20to%20Pro%20plan')">Upgrade</button>
+                </div>
+                <div style="display:flex; justify-content:space-between; padding:8px 0;">
+                    <span><strong>Enterprise</strong> – ₦15,000</span>
+                    <button class="btn btn-primary btn-sm" onclick="window.open('https://wa.me/23409118310148?text=I%20want%20to%20upgrade%20to%20Enterprise%20plan')">Upgrade</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>🔐 Change Password</h3>
+            <div class="form-group">
+                <label>Current Password</label>
+                <input type="password" id="currentPassword" />
+            </div>
+            <div class="form-group">
+                <label>New Password</label>
+                <input type="password" id="newPassword" />
+            </div>
+            <div class="form-group">
+                <label>Confirm New Password</label>
+                <input type="password" id="confirmNewPassword" />
+            </div>
+            <button class="btn btn-primary btn-block" id="changePasswordBtn">🔑 Change Password</button>
+        </div>
+
+        <div class="card">
+            <h3>🔑 Validate API Key</h3>
+            <div class="form-group">
+                <label>Enter API Key</label>
+                <input type="text" id="validateKeyInput" placeholder="sendly_live_xxxxxxxxxx" />
+            </div>
+            <button class="btn btn-primary btn-block" id="validateKeyBtn">🔍 Validate Key</button>
+            <div id="validateKeyResult" style="margin-top:12px; font-size:13px; color:#8a8a96;"></div>
+        </div>
+
+        <div class="card">
+            <h3>🔄 Revoke API Key</h3>
+            <p style="font-size:13px; margin-bottom:12px;">Revoking will immediately invalidate the current API key. All apps using it will lose access.</p>
+            <button class="btn btn-danger btn-block" id="revokeKeyBtn">⚠️ Revoke API Key</button>
+        </div>
+
+        <div class="card">
+            <h3>🔗 Webhooks</h3>
+            <div class="form-group">
+                <label>Webhook URL</label>
+                <input type="url" id="webhookUrl" placeholder="https://example.com/webhook" />
+            </div>
+            <div class="form-group">
+                <label>Event</label>
+                <select id="webhookEvent">
+                    <option value="user_signup">User Signup</option>
+                    <option value="notification_sent">Notification Sent</option>
+                    <option value="subscriber_added">Subscriber Added</option>
+                    <option value="account_deleted">Account Deleted</option>
+                </select>
+            </div>
+            <button class="btn btn-primary btn-block" id="registerWebhookBtn">🔗 Register Webhook</button>
+            <div id="webhookList" style="margin-top:12px;"></div>
+        </div>
+
+        <div class="card">
+            <h3>📋 Logs</h3>
+            <div class="btn-group">
+                <button class="btn btn-secondary btn-sm" id="viewWebhookLogsBtn">Webhook Logs</button>
+                <button class="btn btn-secondary btn-sm" id="viewSubscriptionLogsBtn">Subscription Logs</button>
+                <button class="btn btn-secondary btn-sm" id="viewNotificationLogsBtn">Notification Logs</button>
+            </div>
+            <div id="logsOutput" style="margin-top:12px; max-height:300px; overflow-y:auto; font-size:12px; color:#8a8a96;"></div>
+        </div>
+
+        <div class="card">
+            <h3>📱 Test Notification</h3>
+            <button class="btn btn-secondary btn-block" id="testNotificationBtn">🔔 Send Test Notification</button>
+        </div>
+
+        <div class="card">
+            <h3>✅ Verify Config/Widget</h3>
+            <div class="form-group">
+                <label>Your Website URL</label>
+                <input type="url" id="verifyWidgetUrl" placeholder="https://example.com" />
+            </div>
+            <button class="btn btn-primary btn-block" id="verifyWidgetBtn">🔍 Verify Widget</button>
+            <div id="verifyWidgetResult" style="margin-top:12px; font-size:13px;"></div>
+        </div>
+
+        <div class="card">
+            <h3>🔥 Crack Signals</h3>
+            <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #22222a;">
+                <span>Current Crack Signals</span>
+                <span id="crackCount" style="color:#00f2fe;">0</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; padding:8px 0;">
+                <span>Status</span>
+                <span id="crackStatus" style="color:#34c759;">🟢 Secure</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>👤 Account</h3>
+            <div class="settings-item">
+                <div class="left"><span class="title">Log Out</span><span class="desc">Sign out of your account</span></div>
+                <button class="btn btn-secondary btn-sm" id="settingsLogoutBtn">Log Out</button>
+            </div>
+            <div class="settings-item">
+                <div class="left"><span class="title" style="color:#ff453a;">Delete Account</span><span class="desc">Permanently remove all data</span></div>
+                <button class="btn btn-danger btn-sm" id="deleteAccountBtn">Delete</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>ℹ️ About</h3>
+            <p><strong>Sendly</strong> is a powerful notification platform built by <strong>Henry Global Tech Industry</strong>. Send push notifications and emails to your users with ease.</p>
+            <button class="btn btn-secondary btn-sm" id="viewPrivacyBtn">📄 Privacy Policy</button>
+        </div>
+    </div>
+
+    <nav class="bottom-nav">
+        <button class="nav-item active" data-tab="tabCreateApp">
+            <span class="icon">📱</span> Apps
+        </button>
+        <button class="nav-item" data-tab="tabPush">
+            <span class="icon">🔔</span> Push
+        </button>
+        <button class="nav-item" data-tab="tabStats">
+            <span class="icon">📊</span> Stats
+        </button>
+        <button class="nav-item" data-tab="tabSettings">
+            <span class="icon">⚙️</span> Settings
+        </button>
+    </nav>
+
+    <footer class="app-footer">
+        All rights reserved. Henry Global Tech Industry (HGT) &copy; 2026 / 2027
+    </footer>
+</div>
+
+<div class="modal-overlay" id="resultModal">
+    <div class="modal-box" id="resultModalBox">
+        <span class="result-icon" id="resultIcon">✅</span>
+        <h2 id="resultTitle">Success</h2>
+        <p id="resultMessage">Operation completed successfully.</p>
+        <button class="btn btn-secondary btn-block" id="closeResultModal">Close</button>
+    </div>
+</div>
+
+<div class="modal-overlay" id="privacyModal">
+    <div class="modal-box">
+        <div class="icon">📄</div>
+        <h2>Privacy Policy</h2>
+        <div style="text-align:left; font-size:13px; color:#8a8a96; max-height:400px; overflow-y:auto;">
+            <p><strong>Sendly Privacy Policy</strong></p>
+            <p>Last updated: August 2026</p>
+            <p>Sendly (operated by Henry Global Tech Industry) respects your privacy. This policy explains how we collect, use, and protect your data.</p>
+            <p><strong>Data We Collect:</strong></p>
+            <p>• Email address</p>
+            <p>• Device information (for push notifications)</p>
+            <p>• Notification preferences</p>
+            <p><strong>How We Use Data:</strong></p>
+            <p>• To send notifications you have subscribed to</p>
+            <p>• To improve our services</p>
+            <p>• To communicate with you</p>
+            <p><strong>Data Security:</strong></p>
+            <p>We use industry-standard encryption and security measures to protect your data.</p>
+            <p><strong>Contact:</strong> admin@hgt.com</p>
+        </div>
+        <button class="btn btn-secondary btn-block" id="closePrivacyBtn">Close</button>
+    </div>
+</div>
+
+<script>
+    // ============================================================
+    // 🔧 CONFIGURATION
+    // ============================================================
+    const API_BASE = 'https://push-notification-server-5tx2.onrender.com';
+    const IMGBB_API_KEY = '2b2ce9305b3ff047d65df5cb5f9153fc';
+    const SW_DOWNLOAD_URL = 'https://raw.githubusercontent.com/henrykamsi/push-notification-server/main/sw.js';
+
+    // ============================================================
+    // 📦 CONFIG TEMPLATE (API KEY REMOVED)
+    // ============================================================
+    const CONFIG_TEMPLATE = `<script>
+(function() {
+    'use strict';
+
+    const SERVER_URL = 'https://push-notification-server-5tx2.onrender.com';
+    const API_KEY = '###API_KEY###';
+    const APP_NAME = 'Sendly Notification';
+
+    if (!('Notification' in window)) {
+        console.warn('Sendly: Notifications not supported');
+        return;
+    }
+
+    function createPopup() {
+        if (document.getElementById('sendly-popup-overlay')) return;
+
+        const popupHTML = \`
+            <div id="sendly-popup-overlay" style="
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.75);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 999999;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            ">
+                <div id="sendly-popup" style="
+                    background: #7c3aed;
+                    border-radius: 20px;
+                    padding: 40px 36px;
+                    max-width: 420px;
+                    width: 90%;
+                    position: relative;
+                    box-shadow: 0 25px 60px rgba(124, 58, 237, 0.5);
+                    animation: sendlyFadeIn 0.4s ease-out;
+                    text-align: center;
+                ">
+                    <button id="sendly-close-btn" style="
+                        position: absolute;
+                        top: 12px;
+                        right: 16px;
+                        background: none;
+                        border: none;
+                        font-size: 24px;
+                        color: rgba(255,255,255,0.5);
+                        cursor: pointer;
+                        padding: 4px 8px;
+                        transition: color 0.2s;
+                    ">&times;</button>
+
+                    <div style="margin-bottom: 12px;">
+                        <span style="font-size: 48px;">🔔</span>
+                    </div>
+
+                    <h2 style="
+                        font-size: 22px;
+                        font-weight: 700;
+                        color: #ffffff;
+                        margin: 0 0 6px 0;
+                    ">\${APP_NAME}</h2>
+
+                    <p style="
+                        font-size: 15px;
+                        color: rgba(255,255,255,0.85);
+                        margin: 0 0 24px 0;
+                        line-height: 1.6;
+                    ">
+                        Allow notifications to receive real-time updates and alerts.
+                    </p>
+
+                    <div style="display: flex; gap: 12px; justify-content: center;">
+                        <button id="sendly-allow-btn" style="
+                            background: #22c55e;
+                            color: #ffffff;
+                            border: none;
+                            border-radius: 10px;
+                            padding: 14px 28px;
+                            font-size: 16px;
+                            font-weight: 600;
+                            cursor: pointer;
+                            transition: background 0.2s, transform 0.1s;
+                            flex: 1;
+                            box-shadow: 0 4px 15px rgba(34, 197, 94, 0.3);
+                        ">✅ Allow</button>
+
+                        <button id="sendly-dismiss-btn" style="
+                            background: #ef4444;
+                            color: #ffffff;
+                            border: none;
+                            border-radius: 10px;
+                            padding: 14px 28px;
+                            font-size: 16px;
+                            font-weight: 600;
+                            cursor: pointer;
+                            transition: background 0.2s, transform 0.1s;
+                            flex: 1;
+                            box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);
+                        ">✕ Dismiss</button>
+                    </div>
+
+                    <div id="sendly-status" style="
+                        margin-top: 16px;
+                        font-size: 14px;
+                        color: rgba(255,255,255,0.8);
+                        display: none;
+                    "></div>
+
+                    <p style="
+                        font-size: 11px;
+                        color: rgba(255,255,255,0.4);
+                        margin: 14px 0 0 0;
+                    ">You can change this anytime in your browser settings</p>
+                </div>
+            </div>
+
+            <style>
+                @keyframes sendlyFadeIn {
+                    from { opacity: 0; transform: scale(0.95) translateY(15px); }
+                    to { opacity: 1; transform: scale(1) translateY(0); }
+                }
+                #sendly-allow-btn:hover {
+                    background: #16a34a;
+                    transform: scale(1.02);
+                }
+                #sendly-dismiss-btn:hover {
+                    background: #dc2626;
+                    transform: scale(1.02);
+                }
+                #sendly-close-btn:hover {
+                    color: #ffffff;
+                }
+                #sendly-status.success {
+                    color: #86efac;
+                }
+                #sendly-status.error {
+                    color: #fca5a5;
+                }
+            </style>
+        \`;
+
+        const div = document.createElement('div');
+        div.innerHTML = popupHTML;
+        document.body.appendChild(div.firstElementChild);
+
+        document.getElementById('sendly-allow-btn').addEventListener('click', function() {
+            setStatus('⏳ Requesting permission...', '');
+            requestBrowserPermission();
+        });
+
+        document.getElementById('sendly-dismiss-btn').addEventListener('click', function() {
+            closePopup();
+            localStorage.setItem('sendly_dismissed', 'true');
+        });
+
+        document.getElementById('sendly-close-btn').addEventListener('click', function() {
+            closePopup();
+            localStorage.setItem('sendly_dismissed', 'true');
+        });
+
+        document.getElementById('sendly-popup-overlay').addEventListener('click', function(e) {
+            if (e.target === this) {
+                // Do nothing
+            }
+        });
+    }
+
+    function setStatus(message, type) {
+        const statusEl = document.getElementById('sendly-status');
+        if (statusEl) {
+            statusEl.textContent = message;
+            statusEl.className = type || '';
+            statusEl.style.display = 'block';
+        }
+    }
+
+    function closePopup() {
+        const overlay = document.getElementById('sendly-popup-overlay');
+        if (overlay) {
+            overlay.remove();
+        }
+    }
+
+    function requestBrowserPermission() {
+        Notification.requestPermission().then(function(permission) {
+            if (permission === 'granted') {
+                setStatus('✅ Subscribed! Saving device...', 'success');
+                registerServiceWorker();
+                localStorage.removeItem('sendly_dismissed');
+                localStorage.setItem('sendly_subscribed', 'true');
+            } else if (permission === 'denied') {
+                setStatus('❌ Permission denied.', 'error');
+                setTimeout(() => { closePopup(); }, 2000);
+                localStorage.setItem('sendly_blocked', 'true');
+                localStorage.removeItem('sendly_dismissed');
+            } else {
+                setStatus('⚠️ Permission request cancelled.', '');
+            }
+        });
+    }
+
+    async function registerServiceWorker() {
+        try {
+            // ✅ AUTO-DETECT the correct path (works for any user, any subfolder)
+            const swPath = window.location.pathname.split('/').slice(0, -1).join('/') + '/sw.js';
+            const reg = await navigator.serviceWorker.register(swPath);
+            console.log('Sendly: Service worker registered at', swPath);
+
+            const keyRes = await fetch(SERVER_URL + '/api/v1/vapid-key');
+            const keyData = await keyRes.json();
+
+            function urlBase64ToUint8Array(base64String) {
+                const padding = '='.repeat((4 - base64String.length % 4) % 4);
+                const base64 = (base64String + padding).replace(/\\-/g, '+').replace(/_/g, '/');
+                const rawData = window.atob(base64);
+                const outputArray = new Uint8Array(rawData.length);
+                for (let i = 0; i < rawData.length; ++i) {
+                    outputArray[i] = rawData.charCodeAt(i);
+                }
+                return outputArray;
+            }
+
+            const subscription = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(keyData.publicKey)
+            });
+
+            const response = await fetch(SERVER_URL + '/api/v1/subscribe', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-sendly-key': API_KEY
+                },
+                body: JSON.stringify(subscription)
+            });
+
+            const data = await response.json();
+
+            if (data.status === 100) {
+                console.log('✅ Sendly: Device registered successfully');
+                setStatus('✅ Device saved! You will receive notifications.', 'success');
+                setTimeout(() => { closePopup(); }, 2000);
+            } else {
+                console.error('Sendly: Registration failed', data);
+                setStatus('❌ Registration failed: ' + (data.message || 'Unknown error'), 'error');
+            }
+
+        } catch (err) {
+            console.error('Sendly registration error:', err);
+            setStatus('❌ Error: ' + err.message, 'error');
+        }
+    }
+
+    function shouldShowPopup() {
+        if (Notification.permission === 'granted' || localStorage.getItem('sendly_subscribed') === 'true') {
+            registerServiceWorker();
+            return false;
+        }
+
+        if (Notification.permission === 'denied' || localStorage.getItem('sendly_blocked') === 'true') {
+            return false;
+        }
+
+        if (localStorage.getItem('sendly_dismissed') === 'true') {
+            return false;
+        }
+
+        return true;
+    }
+
+    function initSendly() {
+        if (shouldShowPopup()) {
+            createPopup();
+        }
+    }
+
+    if (document.readyState === 'complete') {
+        initSendly();
+    } else {
+        window.addEventListener('load', initSendly);
+    }
+
+    console.log('Sendly: SDK loaded');
+
+})();
+<\/script>`;
+
+    // ============================================================
+    // 📦 VARIABLES
+    // ============================================================
+    var currentUser = null;
+    var currentSession = null;
+    var currentApiKey = null;
+    var currentPlan = 'Free';
+    var countdownIntervals = {};
+    var isAdmin = false;
+    var autoRefreshInterval = null;
+    var refreshTimerSeconds = 30;
+    var refreshTimerInterval = null;
+
+    function $(id) { return document.getElementById(id); }
+
+    // ============================================================
+    // 🌀 LOADER
+    // ============================================================
+    function showLoader(action) {
+        action = action || 'Loading';
+        var actionMap = {
+            'login': 'Signing in',
+            'register': 'Creating account',
+            'create-app': 'Creating app',
+            'send-push': 'Sending notification',
+            'upload': 'Uploading image',
+            'delete': 'Deleting',
+            'webhook': 'Registering webhook',
+            'admin': 'Verifying admin',
+            'test': 'Sending test',
+            'validate': 'Validating key',
+            'revoke': 'Revoking key',
+            'verify-widget': 'Verifying widget'
+        };
+        var loader = document.getElementById('sendly-loader');
+        var actionText = document.getElementById('loaderAction');
+        actionText.textContent = (actionMap[action] || action) + '...';
+        loader.classList.add('show');
+    }
+
+    function hideLoader() {
+        document.getElementById('sendly-loader').classList.remove('show');
+    }
+
+    // ============================================================
+    // 📦 RESULT MODAL
+    // ============================================================
+    function showResultModal(isSuccess, title, message, details) {
+        details = details || '';
+        var modal = document.getElementById('resultModal');
+        var icon = document.getElementById('resultIcon');
+        var titleEl = document.getElementById('resultTitle');
+        var msgEl = document.getElementById('resultMessage');
+        var box = document.getElementById('resultModalBox');
+        box.classList.remove('result-success', 'result-error');
+        if (isSuccess) {
+            icon.textContent = '✅';
+            box.classList.add('result-success');
+            titleEl.textContent = title || 'Success';
+        } else {
+            icon.textContent = '❌';
+            box.classList.add('result-error');
+            titleEl.textContent = title || 'Error';
+        }
+        msgEl.innerHTML = message + (details ? '<br><br><span style="font-size:12px; color:#6a6a76;">' + details + '</span>' : '');
+        modal.classList.add('show');
+    }
+
+    document.getElementById('closeResultModal').onclick = function() {
+        document.getElementById('resultModal').classList.remove('show');
+    };
+    document.getElementById('resultModal').addEventListener('click', function(e) {
+        if (e.target === this) this.classList.remove('show');
+    });
+
+    // ============================================================
+    // 📦 SESSION MANAGEMENT
+    // ============================================================
+    function saveSession(user, session) {
+        localStorage.setItem('sendly_user', JSON.stringify(user));
+        localStorage.setItem('sendly_session', session);
+    }
+
+    function loadSession() {
+        var user = localStorage.getItem('sendly_user');
+        var session = localStorage.getItem('sendly_session');
+        if (user && session) {
+            currentUser = JSON.parse(user);
+            currentSession = session;
+            return true;
+        }
+        return false;
+    }
+
+    function clearSession() {
+        localStorage.removeItem('sendly_user');
+        localStorage.removeItem('sendly_session');
+    }
+
+    // ============================================================
+    // 🔐 AUTH
+    // ============================================================
+    document.getElementById('showRegister').onclick = function() {
+        document.getElementById('loginForm').style.display = 'none';
+        document.getElementById('registerForm').style.display = 'block';
+    };
+    document.getElementById('showLogin').onclick = function() {
+        document.getElementById('registerForm').style.display = 'none';
+        document.getElementById('loginForm').style.display = 'block';
+    };
+
+    document.getElementById('registerBtn').onclick = async function() {
+        var name = document.getElementById('regName').value.trim();
+        var surname = document.getElementById('regSurname').value.trim();
+        var email = document.getElementById('regEmail').value.trim();
+        var password = document.getElementById('regPassword').value.trim();
+        var confirmPassword = document.getElementById('regConfirmPassword').value.trim();
+        var traffic = document.getElementById('regTraffic').value;
+
+        if (!name || !surname || !email || !password || !confirmPassword) {
+            showResultModal(false, 'Validation Error', 'Please fill in all fields.');
+            return;
+        }
+        if (password !== confirmPassword) {
+            showResultModal(false, 'Validation Error', 'Passwords do not match.');
+            return;
+        }
+
+        showLoader('register');
+        try {
+            var res = await fetch(API_BASE + '/api/v1/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name, surname: surname, email: email, password: password, traffic: traffic })
+            });
+            var data = await res.json();
+            if (data.status === 201) {
+                showResultModal(true, 'Account Created!', 'Your account has been created successfully. Please login.');
+                document.getElementById('registerForm').style.display = 'none';
+                document.getElementById('loginForm').style.display = 'block';
+            } else {
+                showResultModal(false, 'Registration Failed', data.message || 'Something went wrong.');
+            }
+        } catch (e) {
+            showResultModal(false, 'Network Error', e.message);
+        }
+        hideLoader();
+    };
+
+    document.getElementById('loginBtn').onclick = async function() {
+        var email = document.getElementById('loginEmail').value.trim();
+        var password = document.getElementById('loginPassword').value.trim();
+        if (!email || !password) {
+            showResultModal(false, 'Validation Error', 'Please enter email and password.');
+            return;
+        }
+        showLoader('login');
+        try {
+            var res = await fetch(API_BASE + '/api/v1/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email, password: password })
+            });
+            var data = await res.json();
+            if (data.status === 200) {
+                currentUser = data;
+                currentSession = data.session_token;
+                saveSession(data, data.session_token);
+                enterApp();
+                showResultModal(true, 'Welcome Back!', 'You have been logged in successfully.');
+            } else {
+                showResultModal(false, 'Login Failed', data.message || 'Invalid credentials.');
+            }
+        } catch (e) {
+            showResultModal(false, 'Network Error', e.message);
+        }
+        hideLoader();
+    };
+
+    document.getElementById('loginPassword').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            document.getElementById('loginBtn').click();
+        }
+    });
+
+    document.getElementById('regPassword').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            document.getElementById('registerBtn').click();
+        }
+    });
+
+    // ============================================================
+    // 🚀 ENTER APP
+    // ============================================================
+    function enterApp() {
+        document.getElementById('authScreen').style.display = 'none';
+        document.getElementById('appContainer').classList.add('active');
+        document.getElementById('userBadge').textContent = '👤 ' + (currentUser.name || 'User');
+        loadApps();
+        loadStats();
+        loadPushHistory();
+        loadCrackSignal();
+        loadSubscriberTokens();
+        loadPlans();
+        loadWebhooks();
+        loadProfile();
+        loadScheduledNotifications();
+        updateScheduledCount();
+        startAutoRefresh();
+    }
+
+    var logout = function() {
+        clearSession();
+        currentUser = null;
+        currentSession = null;
+        stopAutoRefresh();
+        document.getElementById('authScreen').style.display = 'block';
+        document.getElementById('appContainer').classList.remove('active');
+    };
+    document.getElementById('logoutBtn').onclick = logout;
+    document.getElementById('settingsLogoutBtn').onclick = logout;
+
+    // ============================================================
+    // 🔄 AUTO REFRESH (Every 30 Seconds)
+    // ============================================================
+    function startAutoRefresh() {
+        stopAutoRefresh();
+        refreshTimerSeconds = 30;
+        updateRefreshTimerDisplay();
+        autoRefreshInterval = setInterval(function() {
+            loadApps();
+            loadStats();
+            loadPushHistory();
+            loadScheduledNotifications();
+            updateScheduledCount();
+            loadSubscriberTokens();
+            refreshTimerSeconds = 30;
+            updateRefreshTimerDisplay();
+        }, 30000);
+
+        refreshTimerInterval = setInterval(function() {
+            refreshTimerSeconds--;
+            if (refreshTimerSeconds <= 0) refreshTimerSeconds = 30;
+            updateRefreshTimerDisplay();
+        }, 1000);
+    }
+
+    function stopAutoRefresh() {
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+            autoRefreshInterval = null;
+        }
+        if (refreshTimerInterval) {
+            clearInterval(refreshTimerInterval);
+            refreshTimerInterval = null;
+        }
+    }
+
+    function updateRefreshTimerDisplay() {
+        var timerEl = document.getElementById('refreshTimer');
+        if (timerEl) {
+            timerEl.textContent = refreshTimerSeconds + 's';
+        }
+    }
+
+    document.getElementById('refreshAppsBtn').onclick = function() {
+        loadApps();
+        loadStats();
+        loadPushHistory();
+        loadScheduledNotifications();
+        updateScheduledCount();
+        loadSubscriberTokens();
+        refreshTimerSeconds = 30;
+        updateRefreshTimerDisplay();
+        showResultModal(true, 'Refreshed!', 'All data has been refreshed.');
+    };
+
+    // ============================================================
+    // 🌓 THEME
+    // ============================================================
+    var darkMode = true;
+    document.getElementById('lightModeBtn').onclick = function() {
+        darkMode = false;
+        document.body.classList.add('light-mode');
+        document.getElementById('lightModeBtn').classList.add('active');
+        document.getElementById('darkModeBtn').classList.remove('active');
+        localStorage.setItem('sendly_theme', 'light');
+    };
+    document.getElementById('darkModeBtn').onclick = function() {
+        darkMode = true;
+        document.body.classList.remove('light-mode');
+        document.getElementById('darkModeBtn').classList.add('active');
+        document.getElementById('lightModeBtn').classList.remove('active');
+        localStorage.setItem('sendly_theme', 'dark');
+    };
+    if (localStorage.getItem('sendly_theme') === 'light') {
+        document.body.classList.add('light-mode');
+        document.getElementById('lightModeBtn').classList.add('active');
+        document.getElementById('darkModeBtn').classList.remove('active');
+        darkMode = false;
+    }
+
+    // ============================================================
+    // 📱 NAVIGATION
+    // ============================================================
+    document.querySelectorAll('.nav-item').forEach(function(item) {
+        item.onclick = function() {
+            document.querySelectorAll('.nav-item').forEach(function(n) { n.classList.remove('active'); });
+            this.classList.add('active');
+            var tabId = this.dataset.tab;
+            document.querySelectorAll('.tab-content').forEach(function(t) { t.style.display = 'none'; });
+            document.getElementById(tabId).style.display = 'block';
+            if (tabId === 'tabStats') { loadStats(); loadSubscriberTokens(); loadAnalyticsNotifications(); }
+            if (tabId === 'tabPush') { loadPushApps(); loadPushHistory(); loadScheduledNotifications(); updateScheduledCount(); }
+            if (tabId === 'tabSettings') { loadCrackSignal(); loadWebhooks(); loadProfile(); }
+        };
+    });
+
+    // ============================================================
+    // 📱 CONFIG GENERATION STEPS
+    // ============================================================
+    function showStep(step) {
+        document.querySelectorAll('.config-step').forEach(function(el) { el.classList.remove('active'); });
+        document.getElementById('step' + step).classList.add('active');
+        for (var i = 1; i <= 4; i++) {
+            var prog = document.getElementById('prog' + i);
+            prog.classList.remove('active', 'done');
+            if (i < step) prog.classList.add('done');
+            else if (i === step) prog.classList.add('active');
+        }
+    }
+
+    document.getElementById('createAppBtn').onclick = async function() {
+        var appName = document.getElementById('appNameInput').value.trim();
+        var appUrl = document.getElementById('appUrlInput').value.trim();
+
+        if (!appName) {
+            showResultModal(false, 'Validation Error', 'Please enter an app name.');
+            return;
+        }
+        if (!appUrl) {
+            showResultModal(false, 'Validation Error', 'Please enter your app URL.');
+            return;
+        }
+
+        var sessionToken = localStorage.getItem('sendly_session');
+        if (!sessionToken) {
+            showResultModal(false, 'Authentication Error', 'Please login first.');
+            return;
+        }
+
+        showLoader('create-app');
+        try {
+            var res = await fetch(API_BASE + '/api/v1/apps/create', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-session-token': sessionToken
+                },
+                body: JSON.stringify({ app_name: appName, app_url: appUrl })
+            });
+            var data = await res.json();
+
+            if (data.status === 201) {
+                currentApiKey = data.api_key;
+                document.getElementById('apiKeyStepDisplay').textContent = data.api_key;
+                var configWithKey = CONFIG_TEMPLATE.replace(/###API_KEY###/g, data.api_key);
+                document.getElementById('configStepDisplay').textContent = configWithKey;
+                showStep(2);
+                showResultModal(true, 'App Created!', 'Your app has been created successfully.');
+                loadApps();
+            } else {
+                showResultModal(false, 'Creation Failed', data.message || 'Failed to create app.');
+            }
+        } catch (e) {
+            showResultModal(false, 'Network Error', e.message);
+        }
+        hideLoader();
+    };
+
+    document.getElementById('step2BackBtn').onclick = function() { showStep(1); };
+    document.getElementById('step2NextBtn').onclick = function() { showStep(3); };
+    document.getElementById('step3BackBtn').onclick = function() { showStep(2); };
+    document.getElementById('step3NextBtn').onclick = function() { showStep(4); };
+    document.getElementById('step4BackBtn').onclick = function() { showStep(3); };
+    document.getElementById('step4DoneBtn').onclick = function() {
+        showStep(1);
+        document.getElementById('appNameInput').value = '';
+        document.getElementById('appUrlInput').value = '';
+        showResultModal(true, 'Setup Complete!', 'Your app is ready. You can now send push notifications.');
+        loadApps();
+    };
+
+    document.getElementById('copyApiKeyStepBtn').onclick = function() {
+        var key = document.getElementById('apiKeyStepDisplay').textContent;
+        navigator.clipboard.writeText(key).then(function() {
+            showResultModal(true, 'Copied!', 'API Key copied to clipboard.');
+        });
+    };
+
+    document.getElementById('copyConfigStepBtn').onclick = function() {
+        var code = document.getElementById('configStepDisplay').textContent;
+        navigator.clipboard.writeText(code).then(function() {
+            showResultModal(true, 'Copied!', 'Config code copied to clipboard.');
+        });
+    };
+
+    // ============================================================
+    // 📥 SERVICE WORKER DOWNLOAD (Green Button - Downloads, Not Previews)
+    // ============================================================
+    document.getElementById('downloadSwBtn').addEventListener('click', async function() {
+        try {
+            showLoader('upload');
+            var response = await fetch(SW_DOWNLOAD_URL);
+            var scriptContent = await response.text();
+
+            var blob = new Blob([scriptContent], { type: 'application/javascript' });
+            var url = window.URL.createObjectURL(blob);
+            var a = document.createElement('a');
+
+            a.href = url;
+            a.download = 'sw.js';
+
+            document.body.appendChild(a);
+            a.click();
+
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            hideLoader();
+            showResultModal(true, 'Downloaded!', 'sw.js has been downloaded successfully.');
+        } catch (error) {
+            hideLoader();
+            console.error('Download failed:', error);
+            showResultModal(false, 'Download Failed', 'Could not download sw.js. Please try again.');
+        }
+    });
+
+    // ============================================================
+    // 📱 APPS LIST
+    // ============================================================
+    async function loadApps() {
+        if (!currentSession) return;
+        try {
+            var res = await fetch(API_BASE + '/api/v1/apps/list', {
+                headers: { 'x-session-token': currentSession }
+            });
+            var data = await res.json();
+            var container = document.getElementById('appsList');
+            var empty = document.getElementById('emptyApps');
+            if (data.apps && data.apps.length > 0) {
+                empty.style.display = 'none';
+                container.innerHTML = data.apps.map(function(p) {
+                    return '<div class="app-item" data-apikey="' + p.api_key + '" data-appid="' + p.id + '">' +
+                        '<div class="info" onclick="selectApp(\'' + p.api_key + '\')">' +
+                            '<div class="name">' + (p.app_name || p.project_name || 'Unnamed') + '</div>' +
+                            '<div class="meta">🔑 ' + (p.api_key ? p.api_key.substring(0, 20) + '…' : '') + ' • 📱 ' + (p.subscribers || 0) + ' subs</div>' +
+                        '</div>' +
+                        '<div class="app-actions">' +
+                            '<button class="app-menu-btn" onclick="toggleAppMenu(event, \'' + p.api_key + '\')" title="More options">⋮</button>' +
+                            '<div class="app-menu-dropdown" id="appMenu_' + p.api_key + '">' +
+                                '<button onclick="showApiKey(\'' + p.api_key + '\')">📋 Get API Key</button>' +
+                                '<button onclick="getAppStats(\'' + p.api_key + '\')">📊 Get Stats</button>' +
+                                '<button onclick="viewAppAnalytics(\'' + p.api_key + '\')">📈 View Analytics</button>' +
+                                '<button onclick="deleteApp(\'' + p.api_key + '\')" style="color:#ff453a;">🗑️ Delete App</button>' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>';
+                }).join('');
+                var select = document.getElementById('pushAppSelect');
+                select.innerHTML = '<option value="">— Select an app —</option>' +
+                    data.apps.map(function(p) {
+                        return '<option value="' + p.api_key + '">' + (p.app_name || p.project_name || 'Unnamed') + '</option>';
+                    }).join('');
+            } else {
+                empty.style.display = 'block';
+                container.innerHTML = '';
+            }
+        } catch (e) { console.warn('Load apps error:', e); }
+    }
+
+    window.selectApp = function(apiKey) {
+        currentApiKey = apiKey;
+        document.querySelectorAll('.app-item').forEach(function(el) {
+            el.classList.toggle('selected', el.dataset.apikey === apiKey);
+        });
+        loadSubscriberTokens();
+        updatePlanBadge();
+        showResultModal(true, 'App Selected', 'Selected app: ' + apiKey.substring(0, 20) + '…');
+        document.querySelector('[data-tab="tabPush"]').click();
+    };
+
+    function toggleAppMenu(event, apiKey) {
+        event.stopPropagation();
+        document.querySelectorAll('.app-menu-dropdown').forEach(function(m) { m.style.display = 'none'; });
+        var menu = document.getElementById('appMenu_' + apiKey);
+        if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    }
+
+    window.showApiKey = function(apiKey) {
+        document.getElementById('apiKeyStepDisplay').textContent = apiKey;
+        showStep(2);
+        document.querySelectorAll('.app-menu-dropdown').forEach(function(m) { m.style.display = 'none'; });
+    };
+
+    window.getAppStats = async function(apiKey) {
+        if (!currentSession) return;
+        showLoader('validate');
+        try {
+            var res = await fetch(API_BASE + '/api/v1/apps/list', {
+                headers: { 'x-session-token': currentSession }
+            });
+            var data = await res.json();
+            var app = data.apps.find(function(p) { return p.api_key === apiKey; });
+            if (!app) {
+                showResultModal(false, 'Error', 'App not found.');
+                hideLoader();
+                return;
+            }
+            var details = '📱 App: ' + (app.app_name || app.project_name) + '\n📊 Subscribers: ' + (app.subscribers || 0) + '\n📤 Quota: ' + (app.push_quota || 0) + '\n📧 Email Quota: ' + (app.email_quota || 0) + '\n📋 Plan: ' + (app.plan || 'Free');
+            showResultModal(true, 'App Stats', 'Statistics for ' + (app.app_name || app.project_name), details);
+        } catch (e) {
+            showResultModal(false, 'Network Error', e.message);
+        }
+        hideLoader();
+    };
+
+    window.viewAppAnalytics = function(apiKey) {
+        currentApiKey = apiKey;
+        document.querySelector('[data-tab="tabStats"]').click();
+        loadStats();
+        loadSubscriberTokens();
+        loadAnalyticsNotifications();
+        showResultModal(true, 'Viewing Analytics', 'Analytics for selected app.');
+    };
+
+    window.deleteApp = async function(apiKey) {
+        var appName = prompt('Enter the app name to confirm deletion:');
+        if (!appName) return;
+
+        showLoader('delete');
+        try {
+            var res = await fetch(API_BASE + '/api/v1/apps/list', {
+                headers: { 'x-session-token': currentSession }
+            });
+            var data = await res.json();
+            var app = data.apps.find(function(p) { return p.api_key === apiKey; });
+            if (!app) {
+                showResultModal(false, 'Error', 'App not found.');
+                hideLoader();
+                return;
+            }
+            if (appName !== (app.app_name || app.project_name)) {
+                showResultModal(false, 'Error', 'App name does not match. Deletion cancelled.');
+                hideLoader();
+                return;
+            }
+            var deleteRes = await fetch(API_BASE + '/api/v1/apps/' + app.id, {
+                method: 'DELETE',
+                headers: { 'x-sendly-key': apiKey }
+            });
+            var result = await deleteRes.json();
+            if (result.status === 001 || result.success) {
+                showResultModal(true, 'App Deleted', 'The app has been permanently deleted.');
+                loadApps();
+            } else {
+                showResultModal(false, 'Delete Failed', result.message || 'Something went wrong.');
+            }
+        } catch (e) {
+            showResultModal(false, 'Network Error', e.message);
+        }
+        hideLoader();
+    };
+
+    document.addEventListener('click', function() {
+        document.querySelectorAll('.app-menu-dropdown').forEach(function(m) { m.style.display = 'none'; });
+    });
+
+    // ============================================================
+    // 📸 IMAGE UPLOAD
+    // ============================================================
+    async function uploadImageToImgBB(file) {
+        var formData = new FormData();
+        formData.append('image', file);
+        formData.append('key', IMGBB_API_KEY);
+        try {
+            var response = await fetch('https://api.imgbb.com/1/upload', { method: 'POST', body: formData });
+            var data = await response.json();
+            return data.success ? data.data.url : null;
+        } catch (error) { return null; }
+    }
+
+    function setupImageUpload(uploadAreaId, fileInputId, previewId, inputId) {
+        var uploadArea = document.getElementById(uploadAreaId);
+        var fileInput = document.getElementById(fileInputId);
+        var preview = document.getElementById(previewId);
+        var input = document.getElementById(inputId);
+        uploadArea.addEventListener('click', function() { fileInput.click(); });
+        fileInput.addEventListener('change', async function(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                preview.src = e.target.result;
+                preview.classList.add('show');
+            };
+            reader.readAsDataURL(file);
+            showLoader('upload');
+            var url = await uploadImageToImgBB(file);
+            hideLoader();
+            if (url) {
+                input.value = url;
+                uploadArea.querySelector('.text').textContent = '✅ Uploaded!';
+                uploadArea.style.borderColor = '#00ff88';
+                showResultModal(true, 'Upload Complete', 'Image uploaded successfully!');
+            } else {
+                showResultModal(false, 'Upload Failed', 'Could not upload image. Please try again.');
+            }
+        });
+    }
+
+    setupImageUpload('imageUploadArea', 'imageFileInput', 'imagePreview', 'pushImage');
+    setupImageUpload('iconUploadArea', 'iconFileInput', 'iconPreview', 'pushIcon');
+
+    // ============================================================
+    // 📤 SEND NOTIFICATION
+    // ============================================================
+    var isScheduled = false;
+
+    document.getElementById('sendNowBtn').onclick = function() {
+        isScheduled = false;
+        document.getElementById('sendNowBtn').classList.add('active');
+        document.getElementById('scheduleBtn').classList.remove('active');
+        document.getElementById('schedulePicker').style.display = 'none';
+    };
+
+    document.getElementById('scheduleBtn').onclick = function() {
+        isScheduled = true;
+        document.getElementById('scheduleBtn').classList.add('active');
+        document.getElementById('sendNowBtn').classList.remove('active');
+        document.getElementById('schedulePicker').style.display = 'block';
+    };
+
+    document.getElementById('sendPushBtn').onclick = async function() {
+        var apiKey = document.getElementById('pushAppSelect').value || currentApiKey;
+        var title = document.getElementById('pushTitle').value.trim();
+        var message = document.getElementById('pushMessage').value.trim();
+        var image = document.getElementById('pushImage').value.trim();
+        var icon = document.getElementById('pushIcon').value.trim();
+        var btn1Name = document.getElementById('btn1Name').value.trim();
+        var btn1Url = document.getElementById('btn1Url').value.trim();
+        var btn2Name = document.getElementById('btn2Name').value.trim();
+        var btn2Url = document.getElementById('btn2Url').value.trim();
+        var schedule = document.getElementById('pushSchedule').value;
+        var group = document.getElementById('pushGroup').value;
+
+        if (!apiKey) {
+            showResultModal(false, 'Validation Error', 'Please select an app.');
+            return;
+        }
+        if (!title || !message) {
+            showResultModal(false, 'Validation Error', 'Please enter a title and message.');
+            return;
+        }
+
+        var payload = {
+            channel: 'push',
+            title: title,
+            message: message,
+            image: image || '',
+            icon: icon || '',
+            button1_name: btn1Name,
+            button1_url: btn1Url,
+            button2_name: btn2Name,
+            button2_url: btn2Url,
+            subscriber_group: group || 'all'
+        };
+
+        if (isScheduled && schedule) {
+            payload.scheduled_for = schedule;
+        }
+
+        showLoader('send-push');
+        try {
+            var res = await fetch(API_BASE + '/api/v1/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-sendly-key': apiKey },
+                body: JSON.stringify(payload)
+            });
+            var data = await res.json();
+
+            if (data.status === 201 || data.success) {
+                var notifId = data.notification_id || 'N/A';
+                var details = '📤 Sent to devices: ' + (data.devices_sent || 'N/A') + '\n📊 Remaining quota: ' + (data.remaining_quota || 'N/A');
+                if (isScheduled && schedule) {
+                    details += '\n📅 Scheduled for: ' + schedule;
+                }
+                showResultModal(true, isScheduled ? '✅ Notification Scheduled!' : '✅ Notification Sent!', 'Notification ID: ' + notifId, details);
+                loadPushHistory();
+                loadScheduledNotifications();
+                updateScheduledCount();
+                document.getElementById('pushTitle').value = '';
+                document.getElementById('pushMessage').value = '';
+                document.getElementById('pushImage').value = '';
+                document.getElementById('pushIcon').value = '';
+                document.getElementById('btn1Name').value = '';
+                document.getElementById('btn1Url').value = '';
+                document.getElementById('btn2Name').value = '';
+                document.getElementById('btn2Url').value = '';
+                document.getElementById('pushSchedule').value = '';
+                document.getElementById('sendNowBtn').click();
+            } else if (data.status === 401 || data.error === 'Unauthorized') {
+                showResultModal(false, 'Authentication Error', 'Invalid API Key. Please check your app selection.');
+            } else if (data.status === 702) {
+                showResultModal(false, 'Quota Exhausted', data.message || 'You have reached your notification limit.');
+            } else if (data.status === 429) {
+                showResultModal(false, 'Rate Limit Exceeded', data.message || 'Too many notifications. Please wait.');
+            } else {
+                showResultModal(false, 'Send Failed', data.message || data.error || 'Something went wrong.');
+            }
+        } catch (e) {
+            showResultModal(false, 'Network Error', e.message);
+        }
+        hideLoader();
+    };
+
+    // ============================================================
+    // ⏳ SCHEDULED NOTIFICATIONS
+    // ============================================================
+    async function loadScheduledNotifications() {
+        if (!currentApiKey) return;
+        try {
+            var res = await fetch(API_BASE + '/api/v1/notifications/scheduled', {
+                headers: { 'x-sendly-key': currentApiKey }
+            });
+            var data = await res.json();
+            var container = document.getElementById('scheduledList');
+            if (!container) return;
+            if (data.scheduled && data.scheduled.length > 0) {
+                container.innerHTML = data.scheduled.map(function(n) {
+                    var countdownId = 'scountdown_' + n.notification_id;
+                    return '<div class="notif-item scheduled" data-id="' + n.notification_id + '">' +
+                        '<span class="scheduled-badge">⏳ SCHEDULED</span>' +
+                        '<div class="header"><span class="title">' + (n.title || 'Untitled') + '</span><span class="time">' + (n.scheduled_for || 'N/A') + '</span></div>' +
+                        '<div class="countdown" id="' + countdownId + '">⏳ Calculating...</div>' +
+                        '<div class="actions">' +
+                            '<button class="btn btn-danger btn-sm" onclick="cancelScheduledNotification(\'' + n.notification_id + '\')">🗑️ Cancel</button>' +
+                        '</div>' +
+                    '</div>';
+                }).join('');
+                data.scheduled.forEach(function(n) {
+                    startScheduledCountdown(n.notification_id, n.scheduled_for);
+                });
+            } else {
+                container.innerHTML = '<p style="color:#6a6a76; font-size:14px; padding:16px 0;">No scheduled notifications.</p>';
+            }
+        } catch (e) {
+            console.warn('Load scheduled error:', e);
+        }
+    }
+
+    function startScheduledCountdown(notifId, scheduledFor) {
+        var el = document.getElementById('scountdown_' + notifId);
+        if (!el) return;
+        var target = new Date(scheduledFor).getTime();
+        if (isNaN(target)) { el.textContent = '⏳ Invalid date'; return; }
+        if (countdownIntervals['sched_' + notifId]) clearInterval(countdownIntervals['sched_' + notifId]);
+        countdownIntervals['sched_' + notifId] = setInterval(function() {
+            var now = Date.now();
+            var diff = target - now;
+            if (diff <= 0) {
+                el.textContent = '🔴 Should be sending now!';
+                el.style.color = '#ff453a';
+                clearInterval(countdownIntervals['sched_' + notifId]);
+                return;
+            }
+            var days = Math.floor(diff / (1000 * 60 * 60 * 24));
+            var hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            var minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            var seconds = Math.floor((diff % (1000 * 60)) / 1000);
+            var display = '⏳ ';
+            if (days > 0) display += days + 'd ';
+            display += String(hours).padStart(2, '0') + 'h ' + String(minutes).padStart(2, '0') + 'm ' + String(seconds).padStart(2, '0') + 's';
+            el.textContent = display + ' remaining';
+        }, 1000);
+    }
+
+    window.cancelScheduledNotification = async function(notifId) {
+        if (!confirm('Cancel this scheduled notification?')) return;
+        if (!currentApiKey) {
+            showResultModal(false, 'Error', 'Please select an app first.');
+            return;
+        }
+        showLoader('delete');
+        try {
+            var res = await fetch(API_BASE + '/api/v1/notification/' + notifId + '/cancel', {
+                method: 'POST',
+                headers: { 'x-sendly-key': currentApiKey }
+            });
+            var data = await res.json();
+            if (data.status === 001 || data.success) {
+                showResultModal(true, 'Cancelled', 'Scheduled notification has been cancelled.');
+                loadScheduledNotifications();
+                updateScheduledCount();
+                loadPushHistory();
+            } else {
+                showResultModal(false, 'Cancel Failed', data.message || 'Could not cancel notification.');
+            }
+        } catch (e) {
+            showResultModal(false, 'Network Error', e.message);
+        }
+        hideLoader();
+    };
+
+    function updateScheduledCount() {
+        var count = document.querySelectorAll('#scheduledList .notif-item').length;
+        var badge = document.getElementById('scheduledCount');
+        if (badge) badge.textContent = count;
+    }
+
+    // ============================================================
+    // 📋 PUSH HISTORY
+    // ============================================================
+    async function loadPushHistory() {
+        var container = document.getElementById('pushHistory');
+        if (!currentApiKey) {
+            container.innerHTML = '<p style="color:#6a6a76;">Select an app to view notifications.</p>';
+            return;
+        }
+        try {
+            var res = await fetch(API_BASE + '/api/v1/notifications/list?page=1&limit=10', {
+                headers: { 'x-sendly-key': currentApiKey }
+            });
+            var data = await res.json();
+            if (!data.notifications || data.notifications.length === 0) {
+                container.innerHTML = '<div class="empty-state" style="padding:20px;"><div class="icon">📋</div><h3>No notifications yet</h3><p>Send your first notification above.</p></div>';
+                return;
+            }
+            container.innerHTML = data.notifications.map(function(n) {
+                var isScheduled = n.status === 'scheduled' || (n.scheduled_for && new Date(n.scheduled_for) > new Date());
+                var isPaused = n.status === 'paused';
+                var isScheduledClass = (isScheduled || n.status === 'scheduled') ? 'scheduled' : '';
+                return '<div class="notif-item ' + isScheduledClass + '" data-id="' + n.notification_id + '">' +
+                    (isScheduled || n.status === 'scheduled' ? '<span class="scheduled-badge">⏳ SCHEDULED</span>' : '') +
+                    '<div class="header"><span class="title">' + (n.title || 'Untitled') + '</span><span class="time">' + (n.sent_at || n.scheduled_for || 'N/A') + '</span></div>' +
+                    '<div class="stats"><span>📱 ' + (n.devices_sent || 0) + ' devices</span><span>👁️ ' + (n.views || 0) + ' views</span><span>👆 ' + (n.clicks || 0) + ' clicks</span><span>📊 ' + (n.open_rate || 0) + '% open rate</span></div>' +
+                    (isScheduled && n.scheduled_for ? '<div class="countdown" style="color:#ff453a;">⏳ Scheduled for: ' + new Date(n.scheduled_for).toLocaleString() + '</div>' : '') +
+                    '<div style="font-size:12px; color:#6a6a76; margin-top:4px;">Status: <span style="color:' + (isPaused ? '#ffa500' : (isScheduled || n.status === 'scheduled') ? '#ff453a' : '#34c759') + '">' + (n.status || 'sent') + '</span></div>' +
+                    '<div class="actions">' +
+                        (isScheduled || n.status === 'scheduled' ? '<button class="btn btn-secondary btn-sm" onclick="rescheduleNotification(\'' + n.notification_id + '\')">📅 Reschedule</button>' : '') +
+                        '<button class="btn btn-secondary btn-sm" onclick="resendNotification(\'' + n.notification_id + '\')">🔄 Resend</button>' +
+                        '<button class="btn btn-secondary btn-sm" onclick="editNotification(\'' + n.notification_id + '\')">✏️ Edit</button>' +
+                        '<button class="btn btn-secondary btn-sm" onclick="viewNotificationAnalytics(\'' + n.notification_id + '\')">📊 Analytics</button>' +
+                        '<button class="btn btn-danger btn-sm" onclick="deleteNotification(\'' + n.notification_id + '\')">🗑️ Delete</button>' +
+                    '</div></div>';
+            }).join('');
+        } catch (e) {
+            console.warn('Load history error:', e);
+            container.innerHTML = '<p style="color:#6a6a76;">Error loading notifications.</p>';
+        }
+    }
+
+    // ============================================================
+    // 🔄 RESEND NOTIFICATION
+    // ============================================================
+    window.resendNotification = async function(notifId) {
+        if (!currentApiKey) {
+            showResultModal(false, 'Error', 'Please select an app first.');
+            return;
+        }
+        showLoader('send-push');
+        try {
+            var res = await fetch(API_BASE + '/api/v1/notification/' + notifId + '/resend', {
+                method: 'POST',
+                headers: { 'x-sendly-key': currentApiKey }
+            });
+            var data = await res.json();
+            if (data.status === 201 || data.success) {
+                showResultModal(true, 'Resent!', 'Notification has been resent successfully.', 'New ID: ' + (data.new_notification_id || 'N/A'));
+                loadPushHistory();
+            } else {
+                showResultModal(false, 'Resend Failed', data.message || 'Could not resend notification.');
+            }
+        } catch (e) {
+            showResultModal(false, 'Network Error', e.message);
+        }
+        hideLoader();
+    };
+
+    // ============================================================
+    // ✏️ EDIT NOTIFICATION
+    // ============================================================
+    window.editNotification = function(notifId) {
+        var newTitle = prompt('Enter new title:');
+        if (newTitle === null) return;
+        var newMessage = prompt('Enter new message:');
+        if (newMessage === null) return;
+        showResultModal(true, 'Edit Feature', 'Title and message updated locally. Full edit with save will be implemented soon.');
+    };
+
+    // ============================================================
+    // 📊 VIEW NOTIFICATION ANALYTICS
+    // ============================================================
+    window.viewNotificationAnalytics = function(notifId) {
+        if (!currentApiKey) {
+            showResultModal(false, 'Error', 'Please select an app first.');
+            return;
+        }
+        showLoader('validate');
+        fetch(API_BASE + '/api/v1/analytics/notification/' + notifId, {
+            headers: { 'x-sendly-key': currentApiKey }
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            hideLoader();
+            if (data.status === 200 && data.success) {
+                var n = data.notification || {};
+                var details = '📊 Notification Analytics\n\n';
+                details += '📱 Title: ' + (n.title || 'N/A') + '\n';
+                details += '📤 Sent to: ' + (n.devices_sent || 0) + ' devices\n';
+                details += '👁️ Views: ' + (n.views || 0) + '\n';
+                details += '👆 Clicks: ' + (n.clicks || 0) + '\n';
+                details += '🔘 Button 1 Clicks: ' + (n.button1_clicks || 0) + '\n';
+                details += '🔘 Button 2 Clicks: ' + (n.button2_clicks || 0) + '\n';
+                details += '📈 Open Rate: ' + (n.open_rate || 0) + '%\n';
+                details += '📊 Avg View Time: ' + (n.avg_view_time || 0) + 's\n';
+                details += '📋 Status: ' + (n.status || 'N/A') + '\n';
+                details += '📅 Sent: ' + (n.sent_at || 'N/A');
+                showResultModal(true, 'Notification Analytics', 'Details for notification', details);
+            } else {
+                showResultModal(false, 'Analytics Failed', data.message || 'Could not load analytics.');
+            }
+        })
+        .catch(function(e) {
+            hideLoader();
+            showResultModal(false, 'Network Error', e.message);
+        });
+    };
+
+    // ============================================================
+    // 🗑️ DELETE NOTIFICATION
+    // ============================================================
+    window.deleteNotification = async function(notifId) {
+        if (!confirm('⚠️ Delete this notification permanently?')) return;
+        if (!currentApiKey) {
+            showResultModal(false, 'Error', 'Please select an app first.');
+            return;
+        }
+        showLoader('delete');
+        try {
+            var res = await fetch(API_BASE + '/api/v1/notification/' + notifId, {
+                method: 'DELETE',
+                headers: { 'x-sendly-key': currentApiKey }
+            });
+            var data = await res.json();
+            if (data.status === 001 || data.success) {
+                showResultModal(true, 'Deleted', 'Notification has been permanently deleted.');
+                loadPushHistory();
+                loadScheduledNotifications();
+                updateScheduledCount();
+            } else {
+                showResultModal(false, 'Failed', data.message || 'Could not delete notification.');
+            }
+        } catch (e) {
+            showResultModal(false, 'Network Error', e.message);
+        }
+        hideLoader();
+    };
+
+    // ============================================================
+    // ⏳ RESCHEDULE NOTIFICATION
+    // ============================================================
+    window.rescheduleNotification = function(notifId) {
+        var newDate = prompt('Enter new schedule date (YYYY-MM-DDTHH:MM):');
+        if (!newDate) return;
+        showResultModal(true, 'Reschedule Feature', 'Notification will be rescheduled to: ' + newDate + '\n(Fully implemented with server endpoint soon.)');
+    };
+
+    // ============================================================
+    // 📊 STATS / ANALYTICS
+    // ============================================================
+    var currentRange = 'today';
+
+    document.querySelectorAll('[data-range]').forEach(function(btn) {
+        btn.onclick = function() {
+            currentRange = this.dataset.range;
+            document.querySelectorAll('[data-range]').forEach(function(b) { b.classList.remove('btn-primary'); b.classList.add('btn-secondary'); });
+            this.classList.remove('btn-secondary');
+            this.classList.add('btn-primary');
+            loadStats();
+            loadAnalyticsNotifications();
+        };
+    });
+
+    document.getElementById('refreshAnalyticsBtn').onclick = function() {
+        loadStats();
+        loadAnalyticsNotifications();
+        showResultModal(true, 'Refreshed', 'Analytics data has been refreshed.');
+    };
+
+    async function loadStats() {
+        if (!currentApiKey) return;
+        try {
+            var subRes = await fetch(API_BASE + '/api/v1/subscribers', {
+                headers: { 'x-sendly-key': currentApiKey }
+            });
+            var subData = await subRes.json();
+            var count = subData.count || 0;
+            document.getElementById('statSubscribers').textContent = count;
+
+            var rangeRes = await fetch(API_BASE + '/api/v1/analytics/range?range=' + currentRange, {
+                headers: { 'x-sendly-key': currentApiKey }
+            });
+            var rangeData = await rangeRes.json();
+            if (rangeData.status === 200 && rangeData.analytics) {
+                var a = rangeData.analytics;
+                document.getElementById('statSent').textContent = a.total_notifications_sent || 0;
+                document.getElementById('statDelivered').textContent = a.total_delivered || 0;
+                document.getElementById('statOpenRate').textContent = (a.open_rate || 0) + '%';
+                document.getElementById('statClickRate').textContent = (a.click_through_rate || 0) + '%';
+                document.getElementById('statSuccessRate').textContent = (a.delivery_rate || 0) + '%';
+            }
+        } catch (e) { console.warn('Stats error:', e); }
+    }
+
+    async function loadAnalyticsNotifications() {
+        if (!currentApiKey) {
+            document.getElementById('analyticsNotificationList').innerHTML = '<p style="color:#6a6a76; font-size:14px;">Select an app to view notifications.</p>';
+            return;
+        }
+        try {
+            var res = await fetch(API_BASE + '/api/v1/notifications/list?page=1&limit=10', {
+                headers: { 'x-sendly-key': currentApiKey }
+            });
+            var data = await res.json();
+            var container = document.getElementById('analyticsNotificationList');
+            if (!data.notifications || data.notifications.length === 0) {
+                container.innerHTML = '<p style="color:#6a6a76; font-size:14px;">No notifications sent.</p>';
+                return;
+            }
+            container.innerHTML = data.notifications.map(function(n) {
+                return '<div class="notif-item" style="margin-bottom:8px;">' +
+                    '<div class="header"><span class="title">' + (n.title || 'Untitled') + '</span><span class="time">' + (n.sent_at || 'N/A') + '</span></div>' +
+                    '<div class="stats"><span>📱 ' + (n.devices_sent || 0) + ' devices</span><span>👁️ ' + (n.views || 0) + ' views</span><span>👆 ' + (n.clicks || 0) + ' clicks</span><span>📊 ' + (n.open_rate || 0) + '% open rate</span></div>' +
+                    '</div>';
+            }).join('');
+        } catch (e) {
+            console.warn('Analytics notifications error:', e);
+        }
+    }
+
+    async function loadSubscriberTokens() {
+        if (!currentApiKey) {
+            document.getElementById('subscriberTokens').innerHTML = '<p style="color:#6a6a76;">Select an app to view subscribers.</p>';
+            return;
+        }
+        try {
+            var res = await fetch(API_BASE + '/api/v1/subscribers', {
+                headers: { 'x-sendly-key': currentApiKey }
+            });
+            var data = await res.json();
+            if (data.subscribers && data.subscribers.length > 0) {
+                document.getElementById('subscriberTokens').innerHTML = data.subscribers.map(function(s) {
+                    return '<div class="subscriber-item"><div class="device">📱 ' + (s.device_type || 'Unknown') + ' - ' + (s.device_name || 'Unknown') + ' (' + (s.region || 'Unknown') + ')</div><div class="token">🔑 ' + (s.endpoint ? s.endpoint.substring(0, 60) + '…' : 'No token') + '</div><div style="color:#6a6a76; font-size:11px;">Subscribed: ' + (s.created_at || 'N/A') + '</div></div>';
+                }).join('');
+            } else {
+                document.getElementById('subscriberTokens').innerHTML = '<p style="color:#6a6a76;">No subscribers yet.</p>';
+            }
+        } catch (e) {
+            document.getElementById('subscriberTokens').innerHTML = '<p style="color:#6a6a76;">Error loading subscribers.</p>';
+        }
+    }
+
+    function loadPushApps() {}
+
+    async function loadPlans() {
+        try {
+            var res = await fetch(API_BASE + '/api/v1/plans');
+            var data = await res.json();
+            if (data.plans) {
+                updatePlanBadge();
+            }
+        } catch (e) { console.warn('Plans error:', e); }
+    }
+
+    function updatePlanBadge() {
+        var plan = currentUser?.plan || 'Free';
+        currentPlan = plan;
+        document.getElementById('currentPlanBadge').textContent = plan;
+    }
+
+    // ============================================================
+    // 🧾 PROFILE
+    // ============================================================
+    async function loadProfile() {
+        if (!currentSession) return;
+        try {
+            var res = await fetch(API_BASE + '/api/v1/account/profile', {
+                headers: { 'x-session-token': currentSession }
+            });
+            var data = await res.json();
+            if (data.status === 200 && data.user) {
+                document.getElementById('profileName').textContent = data.user.name + ' ' + (data.user.surname || '');
+                document.getElementById('profileEmail').textContent = data.user.email;
+                document.getElementById('profilePlan').textContent = data.user.plan || 'Free';
+            }
+        } catch (e) { console.warn('Profile error:', e); }
+    }
+
+    // ============================================================
+    // 🔑 VALIDATE KEY
+    // ============================================================
+    document.getElementById('validateKeyBtn').onclick = async function() {
+        var key = document.getElementById('validateKeyInput').value.trim();
+        if (!key) {
+            showResultModal(false, 'Validation Error', 'Please enter an API key to validate.');
+            return;
+        }
+        showLoader('validate');
+        try {
+            var res = await fetch(API_BASE + '/api/v1/validate-key', {
+                headers: { 'x-sendly-key': key }
+            });
+            var data = await res.json();
+            var resultDiv = document.getElementById('validateKeyResult');
+            resultDiv.innerHTML = '<pre style="color:#00f2fe; font-size:12px; background:#0f0f12; padding:12px; border-radius:8px; overflow-x:auto;">' + JSON.stringify(data, null, 2) + '</pre>';
+            var english = '';
+            if (data.status === 200 && data.success) {
+                english = '✅ API Key is ACTIVE\n📱 Project: ' + (data.project?.name || 'N/A') + '\n📊 Plan: ' + (data.project?.plan || 'Free') + '\n📤 Push Quota Remaining: ' + (data.project?.push_quota_remaining || 0) + '\n📧 Email Quota Remaining: ' + (data.project?.email_quota_remaining || 0) + '\n🔥 Crack Signals: ' + (data.project?.crack_signals || 0) + '\n';
+                if (data.project?.warning) english += '⚠️ ' + data.project.warning;
+                showResultModal(true, 'Key is Valid', 'Project: ' + (data.project?.name || 'N/A'), english);
+            } else {
+                english = '❌ ' + (data.message || 'Invalid API Key');
+                showResultModal(false, 'Invalid Key', data.message || 'The API key is not valid.');
+            }
+            resultDiv.innerHTML += '<div style="margin-top:12px; padding:12px; background:#0f0f12; border-radius:8px; white-space:pre-line; color:#e8e8ec; font-size:13px;">' + english + '</div>';
+        } catch (e) {
+            showResultModal(false, 'Network Error', e.message);
+        }
+        hideLoader();
+    };
+
+    // ============================================================
+    // 🔄 REVOKE KEY
+    // ============================================================
+    document.getElementById('revokeKeyBtn').onclick = async function() {
+        if (!currentApiKey) {
+            showResultModal(false, 'Error', 'Please select an app first.');
+            return;
+        }
+        if (!confirm('⚠️ This will revoke the current API key. All apps using it will lose access. Continue?')) return;
+        var email = prompt('Enter your email:');
+        if (!email) return;
+        var password = prompt('Enter your password:');
+        if (!password) return;
+        showLoader('revoke');
+        try {
+            var res = await fetch(API_BASE + '/api/v1/revoke-key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ api_key: currentApiKey, email: email, password: password })
+            });
+            var data = await res.json();
+            if (data.status === 001 || data.success) {
+                currentApiKey = data.new_api_key;
+                showResultModal(true, 'API Key Revoked', 'A new API key has been generated.', 'New Key: ' + data.new_api_key);
+                loadApps();
+            } else {
+                showResultModal(false, 'Revoke Failed', data.message || 'Could not revoke API key.');
+            }
+        } catch (e) {
+            showResultModal(false, 'Network Error', e.message);
+        }
+        hideLoader();
+    };
+
+    // ============================================================
+    // 🔗 WEBHOOKS
+    // ============================================================
+    document.getElementById('registerWebhookBtn').onclick = async function() {
+        var url = document.getElementById('webhookUrl').value.trim();
+        var event = document.getElementById('webhookEvent').value;
+        if (!url) {
+            showResultModal(false, 'Validation Error', 'Please enter a webhook URL.');
+            return;
+        }
+        if (!currentApiKey) {
+            showResultModal(false, 'Error', 'Please select an app first.');
+            return;
+        }
+        showLoader('webhook');
+        try {
+            var res = await fetch(API_BASE + '/api/v1/webhook/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-sendly-key': currentApiKey },
+                body: JSON.stringify({ url: url, event: event })
+            });
+            var data = await res.json();
+            if (data.status === 201 || data.success) {
+                showResultModal(true, 'Webhook Registered', 'Webhook for "' + event + '" has been added.');
+                loadWebhooks();
+                document.getElementById('webhookUrl').value = '';
+            } else {
+                showResultModal(false, 'Registration Failed', data.message || 'Could not register webhook.');
+            }
+        } catch (e) {
+            showResultModal(false, 'Network Error', e.message);
+        }
+        hideLoader();
+    };
+
+    async function loadWebhooks() {
+        if (!currentApiKey) {
+            document.getElementById('webhookList').innerHTML = '<p style="color:#6a6a76;">Select an app to view webhooks.</p>';
+            return;
+        }
+        try {
+            var res = await fetch(API_BASE + '/api/v1/webhook/list', {
+                headers: { 'x-sendly-key': currentApiKey }
+            });
+            var data = await res.json();
+            var container = document.getElementById('webhookList');
+            if (data.webhooks && data.webhooks.length > 0) {
+                container.innerHTML = data.webhooks.map(function(w) {
+                    return '<div style="background:#0f0f12; border:1px solid #22222a; border-radius:8px; padding:10px; margin-bottom:8px; font-size:13px;"><div><strong>' + w.event + '</strong> → ' + w.url + '</div><div style="color:#6a6a76; font-size:11px;">Status: ' + (w.active ? '✅ Active' : '❌ Inactive') + ' • Created: ' + w.created_at + '</div><button class="btn btn-danger btn-sm" onclick="deleteWebhook(\'' + w.id + '\')" style="margin-top:6px;">🗑️ Delete Webhook</button></div>';
+                }).join('');
+            } else {
+                container.innerHTML = '<p style="color:#6a6a76;">No webhooks registered.</p>';
+            }
+        } catch (e) {
+            console.warn('Load webhooks error:', e);
+            document.getElementById('webhookList').innerHTML = '<p style="color:#6a6a76;">Error loading webhooks.</p>';
+        }
+    }
+
+    window.deleteWebhook = async function(webhookId) {
+        if (!confirm('Delete this webhook?')) return;
+        if (!currentApiKey) {
+            showResultModal(false, 'Error', 'Please select an app first.');
+            return;
+        }
+        showLoader('delete');
+        try {
+            var res = await fetch(API_BASE + '/api/v1/webhook/delete', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json', 'x-sendly-key': currentApiKey },
+                body: JSON.stringify({ webhook_id: webhookId })
+            });
+            var data = await res.json();
+            if (data.status === 202 || data.success) {
+                showResultModal(true, 'Webhook Deleted', 'The webhook has been removed.');
+                loadWebhooks();
+            } else {
+                showResultModal(false, 'Delete Failed', data.message || 'Could not delete webhook.');
+            }
+        } catch (e) {
+            showResultModal(false, 'Network Error', e.message);
+        }
+        hideLoader();
+    };
+
+    // ============================================================
+    // 📋 LOGS
+    // ============================================================
+    async function fetchLogs(endpoint, label) {
+        if (!currentApiKey) {
+            showResultModal(false, 'Error', 'Please select an app first.');
+            return;
+        }
+        showLoader('admin');
+        try {
+            var res = await fetch(API_BASE + endpoint, {
+                headers: { 'x-sendly-key': currentApiKey }
+            });
+            var data = await res.json();
+            var output = document.getElementById('logsOutput');
+            output.innerHTML = '<div style="color:#00f2fe; font-weight:600; margin-bottom:8px;">📋 ' + label + '</div><pre style="font-size:11px; color:#8a8a96; max-height:300px; overflow-y:auto;">' + JSON.stringify(data, null, 2) + '</pre>';
+            showResultModal(true, 'Logs Loaded', label + ' loaded successfully.');
+        } catch (e) {
+            showResultModal(false, 'Network Error', e.message);
+        }
+        hideLoader();
+    }
+
+    document.getElementById('viewWebhookLogsBtn').onclick = function() { fetchLogs('/api/v1/logs/webhooks', 'Webhook Logs'); };
+    document.getElementById('viewSubscriptionLogsBtn').onclick = function() { fetchLogs('/api/v1/logs/subscriptions', 'Subscription Logs'); };
+    document.getElementById('viewNotificationLogsBtn').onclick = function() { fetchLogs('/api/v1/logs/notifications', 'Notification Logs'); };
+
+    // ============================================================
+    // 📱 TEST NOTIFICATION
+    // ============================================================
+    document.getElementById('testNotificationBtn').onclick = async function() {
+        if (!currentApiKey) {
+            showResultModal(false, 'Error', 'Please select an app first.');
+            return;
+        }
+        showLoader('test');
+        try {
+            var res = await fetch(API_BASE + '/api/v1/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-sendly-key': currentApiKey },
+                body: JSON.stringify({ channel: 'push', title: '🔔 Test Notification', message: 'This is a test from your dashboard.' })
+            });
+            var data = await res.json();
+            if (data.status === 201 || data.success) {
+                showResultModal(true, 'Test Sent', 'Test notification was sent successfully!', 'ID: ' + (data.notification_id || 'N/A'));
+            } else {
+                showResultModal(false, 'Test Failed', data.message || 'Could not send test notification.');
+            }
+        } catch (e) {
+            showResultModal(false, 'Network Error', e.message);
+        }
+        hideLoader();
+    };
+
+    // ============================================================
+    // ✅ VERIFY WIDGET / CONFIG
+    // ============================================================
+    document.getElementById('verifyWidgetBtn').onclick = async function() {
+        var url = document.getElementById('verifyWidgetUrl').value.trim();
+        if (!url) {
+            showResultModal(false, 'Validation Error', 'Please enter your website URL.');
+            return;
+        }
+        if (!currentApiKey) {
+            showResultModal(false, 'Error', 'Please select an app first.');
+            return;
+        }
+        showLoader('verify-widget');
+        try {
+            var res = await fetch(API_BASE + '/api/v1/verify-widget', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ api_key: currentApiKey, website_url: url })
+            });
+            var data = await res.json();
+            var resultDiv = document.getElementById('verifyWidgetResult');
+            if (data.status === 200 && data.success) {
+                resultDiv.innerHTML = '<div style="padding:12px; background:#00ff8818; border:1px solid #34c759; border-radius:8px; color:#34c759;">✅ ' + data.message + '<br>📱 Project: ' + data.project_name + '<br>👥 Subscribers: ' + data.subscribers + '<br>📅 Last Activity: ' + data.last_activity + '</div>';
+                showResultModal(true, 'Widget Verified!', 'Your widget is properly installed on your website.');
+            } else {
+                resultDiv.innerHTML = '<div style="padding:12px; background:#ff453a18; border:1px solid #ff453a; border-radius:8px; color:#ff453a;">❌ ' + data.message + '<br>' + (data.suggestion || '') + '</div>';
+                showResultModal(false, 'Widget Not Found', data.message || 'Widget not found on your website.');
+            }
+        } catch (e) {
+            showResultModal(false, 'Network Error', e.message);
+        }
+        hideLoader();
+    };
+
+    // ============================================================
+    // 🔥 CRACK SIGNAL
+    // ============================================================
+    async function loadCrackSignal() {
+        if (!currentApiKey) return;
+        try {
+            var res = await fetch(API_BASE + '/api/v1/validate-key', {
+                headers: { 'x-sendly-key': currentApiKey }
+            });
+            var data = await res.json();
+            if (data.status === 200) {
+                var crackSignals = data.project?.crack_signals || 0;
+                var crackStatus = document.getElementById('crackStatus');
+                var crackCount = document.getElementById('crackCount');
+                if (crackStatus) {
+                    crackStatus.textContent = crackSignals >= 100 ? '🔴 Locked' : '🟢 Secure';
+                    crackStatus.style.color = crackSignals >= 100 ? '#ff453a' : '#34c759';
+                }
+                if (crackCount) crackCount.textContent = crackSignals;
+            }
+        } catch (e) { console.warn('Crack signal error:', e); }
+    }
+
+    // ============================================================
+    // 🔐 CHANGE PASSWORD
+    // ============================================================
+    document.getElementById('changePasswordBtn').onclick = async function() {
+        var currentPassword = document.getElementById('currentPassword').value.trim();
+        var newPassword = document.getElementById('newPassword').value.trim();
+        var confirmNewPassword = document.getElementById('confirmNewPassword').value.trim();
+
+        if (!currentPassword || !newPassword || !confirmNewPassword) {
+            showResultModal(false, 'Validation Error', 'Please fill in all password fields.');
+            return;
+        }
+        if (newPassword !== confirmNewPassword) {
+            showResultModal(false, 'Validation Error', 'New passwords do not match.');
+            return;
+        }
+        if (!currentSession) {
+            showResultModal(false, 'Authentication Error', 'Please login first.');
+            return;
+        }
+
+        showLoader('validate');
+        try {
+            var res = await fetch(API_BASE + '/api/v1/account/change-password', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-session-token': currentSession
+                },
+                body: JSON.stringify({
+                    current_password: currentPassword,
+                    new_password: newPassword,
+                    confirm_password: confirmNewPassword
+                })
+            });
+            var data = await res.json();
+            if (data.status === 200 && data.success) {
+                showResultModal(true, 'Password Changed', 'Your password has been updated successfully.');
+                document.getElementById('currentPassword').value = '';
+                document.getElementById('newPassword').value = '';
+                document.getElementById('confirmNewPassword').value = '';
+            } else {
+                showResultModal(false, 'Change Failed', data.message || 'Could not change password.');
+            }
+        } catch (e) {
+            showResultModal(false, 'Network Error', e.message);
+        }
+        hideLoader();
+    };
+
+    // ============================================================
+    // 🗑️ DELETE ACCOUNT
+    // ============================================================
+    document.getElementById('deleteAccountBtn').onclick = async function() {
+        if (!confirm('⚠️ Permanently delete your account? This cannot be undone.')) return;
+        if (!currentApiKey) {
+            showResultModal(false, 'Error', 'Please select an app to verify identity.');
+            return;
+        }
+        var username = prompt('Enter your full name to confirm:');
+        if (!username) return;
+        var password = prompt('Enter your password:');
+        if (!password) return;
+        var confirmText = prompt('Type "DELETE" to confirm permanent deletion:');
+        if (confirmText !== 'DELETE') {
+            showResultModal(false, 'Cancelled', 'Deletion cancelled. You did not type DELETE.');
+            return;
+        }
+        showLoader('delete');
+        try {
+            var res = await fetch(API_BASE + '/api/v1/account/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ api_key: currentApiKey, username: username, password: password, confirm: 'yes' })
+            });
+            var data = await res.json();
+            if (data.status === 001 || data.success) {
+                showResultModal(true, 'Account Deleted', 'Your account has been permanently deleted.');
+                logout();
+            } else {
+                showResultModal(false, 'Deletion Failed', data.message || 'Could not delete account.');
+            }
+        } catch (e) {
+            showResultModal(false, 'Network Error', e.message);
+        }
+        hideLoader();
+    };
+
+    // ============================================================
+    // 📄 PRIVACY
+    // ============================================================
+    document.getElementById('viewPrivacyBtn').onclick = function() {
+        document.getElementById('privacyModal').classList.add('show');
+    };
+    document.getElementById('closePrivacyBtn').onclick = function() {
+        document.getElementById('privacyModal').classList.remove('show');
+    };
+
+    // ============================================================
+    // 📋 SCHEDULED TOGGLE
+    // ============================================================
+    document.getElementById('showScheduledBtn').onclick = function() {
+        var container = document.getElementById('scheduledListContainer');
+        var sendForm = document.getElementById('sendFormContainer');
+        var historyContainer = document.getElementById('pushHistoryContainer');
+        if (container.style.display === 'none') {
+            container.style.display = 'block';
+            sendForm.style.display = 'none';
+            historyContainer.style.display = 'none';
+            this.classList.add('btn-primary');
+            this.classList.remove('btn-secondary');
+            loadScheduledNotifications();
+            updateScheduledCount();
+        } else {
+            container.style.display = 'none';
+            sendForm.style.display = 'block';
+            historyContainer.style.display = 'block';
+            this.classList.remove('btn-primary');
+            this.classList.add('btn-secondary');
+        }
+    };
+
+    document.getElementById('showSendFormBtn').onclick = function() {
+        document.getElementById('scheduledListContainer').style.display = 'none';
+        document.getElementById('sendFormContainer').style.display = 'block';
+        document.getElementById('pushHistoryContainer').style.display = 'block';
+        document.getElementById('showScheduledBtn').classList.remove('btn-primary');
+        document.getElementById('showScheduledBtn').classList.add('btn-secondary');
+    };
+
+    // ============================================================
+    // 🚀 INIT
+    // ============================================================
+    if (loadSession()) {
+        enterApp();
+    } else {
+        document.getElementById('authScreen').style.display = 'block';
+    }
+
+    console.log('🚀 Sendly Frontend loaded (Professional)');
+    console.log('🏢 Henry Global Tech Industry');
+</script>
+
+</body>
+</html>
